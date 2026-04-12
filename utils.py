@@ -10,10 +10,13 @@ from dotenv import load_dotenv
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
-if not api_key:
-    raise ValueError("GEMINI_API_KEY is missing in .env")
+# Agar GEMINI_BASE_URL .env da bo'lmasa, Zomro serveri xato bermasligi uchun bepul public proxy ishlatiladi
+base_url = os.getenv("GEMINI_BASE_URL", "https://generative.yunwu.plus")
 
-client = genai.Client(api_key=api_key)
+if base_url:
+    client = genai.Client(api_key=api_key, http_options={'base_url': base_url})
+else:
+    client = genai.Client(api_key=api_key)
 
 # ==================== OCR PROMPT ====================
 

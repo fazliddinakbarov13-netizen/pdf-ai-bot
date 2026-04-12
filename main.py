@@ -2615,18 +2615,21 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                 try:
                     from pdf2docx import Converter
                 except ImportError:
-                    import subprocess, sys, time
-                    # Pip install with detailed logging
+                    import subprocess, sys, time, importlib, os
                     logger.info("pdf2docx topilmadi, o'rnatilmoqda...")
                     try:
-                        subprocess.run([sys.executable, "-m", "pip", "install", "pdf2docx", "python-docx", "docx2pdf"], check=True)
+                        subprocess.run([sys.executable, "-m", "pip", "install", "--user", "pdf2docx", "python-docx", "PyMuPDF"], check=True)
                     except Exception as e:
                         logger.error(f"Pip xatosi (pdf2docx): {e}")
                     time.sleep(2)
                     
                     try:
-                        import importlib, site
+                        import site
                         importlib.reload(site)
+                        if hasattr(site, 'getusersitepackages'):
+                            user_site = site.getusersitepackages()
+                            if user_site not in sys.path:
+                                sys.path.append(user_site)
                     except:
                         pass
                         
