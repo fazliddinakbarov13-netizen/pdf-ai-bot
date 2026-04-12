@@ -14,12 +14,12 @@ api_key = os.getenv("GEMINI_API_KEY")
 base_url = os.getenv("GEMINI_BASE_URL", "https://gemini.chatxyz.online")
 
 if base_url:
-    client = genai.Client(api_key=api_key, http_options={'base_url': base_url})
+    client = genai.Client(api_key=api_key, http_options={'base_url': base_url, 'timeout': 20000})
 else:
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options={'timeout': 20000})
 
 # Ovoz uchun to'g'ridan-to'g'ri API (proxy ba'zan ovozni qo'llab-quvvatlamaydi)
-direct_client = genai.Client(api_key=api_key)
+direct_client = genai.Client(api_key=api_key, http_options={'timeout': 25000})
 
 # ==================== OCR PROMPT ====================
 
