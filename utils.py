@@ -313,17 +313,21 @@ async def process_voice_async(voice_path: str, alphabet: str) -> str:
         with open(voice_path, 'rb') as f:
             audio_data = f.read()
         
-        response = await client.aio.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[
-                {
-                    "inline_data": {
-                        "mime_type": "audio/ogg",
-                        "data": base64.b64encode(audio_data).decode()
-                    }
-                },
-                prompt
-            ]
+        # Asyncio bilan 60 soniya kutish chegarasi
+        response = await asyncio.wait_for(
+            client.aio.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[
+                    {
+                        "inline_data": {
+                            "mime_type": "audio/ogg",
+                            "data": base64.b64encode(audio_data).decode()
+                        }
+                    },
+                    prompt
+                ]
+            ),
+            timeout=60.0
         )
         
         if response.text:
@@ -332,6 +336,9 @@ async def process_voice_async(voice_path: str, alphabet: str) -> str:
             return result
         else:
             raise ValueError("Ovoz tahlilida bo'sh javob.")
+    except asyncio.TimeoutError:
+        logging.error("Ovoz tahlili 60 soniyadan oshib ketdi (Timeout).")
+        raise Exception("API server javob bermadi (Timeout). Iltimos, keyinroq qayta urinib ko'ring.")
     except Exception as e:
         logging.error(f"Ovoz tahlil xatolik: {e}")
         raise

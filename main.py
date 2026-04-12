@@ -2742,11 +2742,38 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                 
                 # LibreOffice orqali PDF ga aylantirish (VPS dagi LibreOffice)
                 # soffice --headless --convert-to pdf file.docx --outdir directory
-                libreoffice_path = r"C:\Program Files\LibreOffice\program\soffice.exe"
-                if os.path.exists(libreoffice_path):
+                libreoffice_paths = [
+                    r"C:\Program Files\LibreOffice\program\soffice.exe",
+                    r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+                    r"C:\tools\LibreOffice\program\soffice.exe"
+                ]
+                
+                # Check for any LibreOffice version folder in Program Files
+                if not any(os.path.exists(p) for p in libreoffice_paths):
+                    try:
+                        pf = r"C:\Program Files"
+                        for d in os.listdir(pf):
+                            if "LibreOffice" in d:
+                                pos = os.path.join(pf, d, "program", "soffice.exe")
+                                if os.path.exists(pos):
+                                    libreoffice_paths.append(pos)
+                        
+                        pf86 = r"C:\Program Files (x86)"
+                        if os.path.exists(pf86):
+                            for d in os.listdir(pf86):
+                                if "LibreOffice" in d:
+                                    pos = os.path.join(pf86, d, "program", "soffice.exe")
+                                    if os.path.exists(pos):
+                                        libreoffice_paths.append(pos)
+                    except Exception:
+                        pass
+
+                soffice_exec = next((p for p in libreoffice_paths if os.path.exists(p)), None)
+                
+                if soffice_exec:
                     import subprocess
                     out_dir = os.path.dirname(pdf_path)
-                    cmd = [libreoffice_path, "--headless", "--convert-to", "pdf", docx_path, "--outdir", out_dir]
+                    cmd = [soffice_exec, "--headless", "--convert-to", "pdf", docx_path, "--outdir", out_dir]
                     process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                     if process.returncode != 0:
                         raise Exception(f"LibreOffice PDF ga o'tkaza olmadi: {process.stderr.decode('utf-8', errors='ignore')}")
