@@ -18,6 +18,9 @@ if base_url:
 else:
     client = genai.Client(api_key=api_key)
 
+# Ovoz uchun to'g'ridan-to'g'ri API (proxy ba'zan ovozni qo'llab-quvvatlamaydi)
+direct_client = genai.Client(api_key=api_key)
+
 # ==================== OCR PROMPT ====================
 
 STRUCTURED_OCR_PROMPT = """You are an expert document OCR system for official Uzbek documents.
@@ -299,7 +302,7 @@ async def translate_text(text: str, target_lang: str) -> str:
 # ==================== OVOZLI XABAR ====================
 
 async def process_voice_async(voice_path: str, alphabet: str) -> str:
-    """Ovozli xabarni matnga aylantirish."""
+    """Ovozli xabarni matnga aylantirish. Avval proxy, keyin to'g'ridan-to'g'ri API."""
     prompt = (
         f"Ushbu ovozli xabardagi gapni to'liq va aniq yozing. "
         f"Hech narsa qo'shmang, hech narsa tushirmang. "
@@ -308,37 +311,55 @@ async def process_voice_async(voice_path: str, alphabet: str) -> str:
         f"Faqat matnni qaytaring."
     )
     
+    with open(voice_path, 'rb') as f:
+        audio_data = f.read()
+    
+    contents = [
+        {
+            "inline_data": {
+                "mime_type": "audio/ogg",
+                "data": base64.b64encode(audio_data).decode()
+            }
+        },
+        prompt
+    ]
+    
+    # 1-usul: Proxy orqali (30 soniya)
     try:
-        # Ovoz faylini yuklash
-        with open(voice_path, 'rb') as f:
-            audio_data = f.read()
-        
-        # Asyncio bilan 60 soniya kutish chegarasi
+        logging.info("Ovoz: Proxy orqali sinab ko'rilmoqda (30s)...")
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
                 model='gemini-2.5-flash',
-                contents=[
-                    {
-                        "inline_data": {
-                            "mime_type": "audio/ogg",
-                            "data": base64.b64encode(audio_data).decode()
-                        }
-                    },
-                    prompt
-                ]
+                contents=contents
+            ),
+            timeout=30.0
+        )
+        if response.text:
+            result = response.text.strip().replace("**", "")
+            logging.info("Ovoz: Proxy orqali muvaffaqiyatli!")
+            return result
+    except (asyncio.TimeoutError, Exception) as e:
+        logging.warning(f"Ovoz: Proxy ishlamadi ({e}). To'g'ridan-to'g'ri API ga o'tilmoqda...")
+    
+    # 2-usul: To'g'ridan-to'g'ri Google API (60 soniya)
+    try:
+        logging.info("Ovoz: To'g'ridan-to'g'ri API sinab ko'rilmoqda (60s)...")
+        response = await asyncio.wait_for(
+            direct_client.aio.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=contents
             ),
             timeout=60.0
         )
-        
         if response.text:
-            result = response.text.strip()
-            result = result.replace("**", "")
+            result = response.text.strip().replace("**", "")
+            logging.info("Ovoz: To'g'ridan-to'g'ri API muvaffaqiyatli!")
             return result
         else:
             raise ValueError("Ovoz tahlilida bo'sh javob.")
     except asyncio.TimeoutError:
-        logging.error("Ovoz tahlili 60 soniyadan oshib ketdi (Timeout).")
-        raise Exception("API server javob bermadi (Timeout). Iltimos, keyinroq qayta urinib ko'ring.")
+        logging.error("Ovoz: Barcha usullar 60 soniyadan oshib ketdi.")
+        raise Exception("Ovoz tahlili vaqti tugadi. Iltimos, qayta urinib ko'ring.")
     except Exception as e:
         logging.error(f"Ovoz tahlil xatolik: {e}")
         raise
