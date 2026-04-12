@@ -2614,48 +2614,41 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
             def _convert_pdf_to_word(pdf_path, docx_path, alphabet):
                 try:
                     from pdf2docx import Converter
+                    cv = Converter(pdf_path)
+                    cv.convert(docx_path)
+                    cv.close()
                 except ImportError:
-                    import subprocess, sys, time, importlib, os
+                    import subprocess, sys
                     logger.info("pdf2docx topilmadi, o'rnatilmoqda...")
                     try:
                         subprocess.run([sys.executable, "-m", "pip", "install", "pdf2docx", "python-docx", "PyMuPDF"], check=True)
                     except Exception as e:
                         logger.error(f"Pip xatosi (pdf2docx): {e}")
-                    time.sleep(2)
                     
+                    logger.info("Alohida jarayonda pdf2docx ishga tushirilmoqda...")
+                    code = f"from pdf2docx import Converter\ncv = Converter(r'{pdf_path}')\ncv.convert(r'{docx_path}')\ncv.close()"
                     try:
-                        import site
-                        importlib.reload(site)
-                        if hasattr(site, 'getusersitepackages'):
-                            user_site = site.getusersitepackages()
-                            if user_site not in sys.path:
-                                sys.path.append(user_site)
-                    except:
-                        pass
-                        
-                    from pdf2docx import Converter
-                
-                cv = Converter(pdf_path)
-                cv.convert(docx_path)
-                cv.close()
+                        subprocess.run([sys.executable, "-c", code], check=True)
+                    except subprocess.CalledProcessError as e:
+                        raise Exception(f"Alohida jarayonda pdf2docx xatosi: {e}")
                 
                 # Agar alifbo konvertatsiya kerak bo'lsa
                 if alphabet in ("Lotin", "Kirill"):
                     try:
                         from docx import Document as DocxDoc
                     except ImportError:
-                        import subprocess, sys, time
+                        import subprocess, sys, importlib
                         logger.info("python-docx topilmadi, o'rnatilmoqda...")
                         try:
                             subprocess.run([sys.executable, "-m", "pip", "install", "python-docx"], check=True)
                         except Exception as e:
                             logger.error(f"Pip xatosi (python-docx): {e}")
-                        time.sleep(2)
                         
+                        importlib.invalidate_caches()
                         try:
-                            import importlib, site
+                            import site
                             importlib.reload(site)
-                        except:
+                        except Exception:
                             pass
                             
                         from docx import Document as DocxDoc
@@ -2709,18 +2702,18 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                     try:
                         from docx import Document as DocxDoc
                     except ImportError:
-                        import subprocess, sys, time
+                        import subprocess, sys, importlib
                         logger.info("python-docx topilmadi, o'rnatilmoqda...")
                         try:
                             subprocess.run([sys.executable, "-m", "pip", "install", "python-docx"], check=True)
                         except Exception as e:
                             logger.error(f"Pip xatosi (python-docx): {e}")
-                        time.sleep(2)
                         
+                        importlib.invalidate_caches()
                         try:
-                            import importlib, site
+                            import site
                             importlib.reload(site)
-                        except:
+                        except Exception:
                             pass
                             
                         from docx import Document as DocxDoc
@@ -2761,23 +2754,21 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                     # Fallback to docx2pdf for testing locally if LibreOffice doesn't exist
                     try:
                         from docx2pdf import convert as docx2pdf_convert
+                        docx2pdf_convert(docx_path, pdf_path)
                     except ImportError:
-                        import subprocess, sys, time
+                        import subprocess, sys
                         logger.info("docx2pdf topilmadi, o'rnatilmoqda...")
                         try:
                             subprocess.run([sys.executable, "-m", "pip", "install", "docx2pdf"], check=True)
                         except Exception as e:
                             logger.error(f"Pip xatosi (docx2pdf): {e}")
-                        time.sleep(2)
                         
+                        logger.info("Alohida jarayonda docx2pdf ishga tushirilmoqda...")
+                        code = f"from docx2pdf import convert\nconvert(r'{docx_path}', r'{pdf_path}')"
                         try:
-                            import importlib, site
-                            importlib.reload(site)
-                        except:
-                            pass
-                            
-                        from docx2pdf import convert as docx2pdf_convert
-                    docx2pdf_convert(docx_path, pdf_path)
+                            subprocess.run([sys.executable, "-c", code], check=True)
+                        except subprocess.CalledProcessError as e:
+                            raise Exception(f"Alohida jarayonda docx2pdf xatosi: {e}")
             
             try:
                 await status_msg.edit_text(
