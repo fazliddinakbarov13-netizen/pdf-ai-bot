@@ -302,67 +302,131 @@ async def translate_text(text: str, target_lang: str) -> str:
 # ==================== OVOZLI XABAR ====================
 
 async def process_voice_async(voice_path: str, alphabet: str) -> str:
-    """Ovozli xabarni matnga aylantirish. Avval proxy, keyin to'g'ridan-to'g'ri API."""
-    prompt = (
-        f"Ushbu ovozli xabardagi gapni to'liq va aniq yozing. "
-        f"Hech narsa qo'shmang, hech narsa tushirmang. "
-        f"Imlo xatolarini tuzating. "
-        f"Natijani {alphabet} alifbosida qaytaring. "
-        f"Faqat matnni qaytaring."
-    )
+    """Ovozli xabarni matnga aylantirish. SpeechRecognition + Gemini fallback."""
     
-    with open(voice_path, 'rb') as f:
-        audio_data = f.read()
-    
-    contents = [
-        {
-            "inline_data": {
-                "mime_type": "audio/ogg",
-                "data": base64.b64encode(audio_data).decode()
-            }
-        },
-        prompt
-    ]
-    
-    # 1-usul: Proxy orqali (30 soniya)
+    # 1-usul: SpeechRecognition (Google Speech API - bepul, ishonchli)
     try:
-        logging.info("Ovoz: Proxy orqali sinab ko'rilmoqda (30s)...")
+        logging.info("Ovoz: SpeechRecognition usuli sinab ko'rilmoqda...")
+        text = await asyncio.to_thread(_speech_recognition_sync, voice_path)
+        if text and len(text.strip()) > 2:
+            logging.info(f"Ovoz: SpeechRecognition muvaffaqiyatli! ({len(text)} belgi)")
+            # Agar alifbo konversiyasi kerak bo'lsa
+            if alphabet == "Kirill":
+                from utils import convert_latin_to_cyrillic
+                text = convert_latin_to_cyrillic(text)
+            return text.strip()
+    except Exception as e:
+        logging.warning(f"Ovoz: SpeechRecognition ishlamadi: {e}")
+    
+    # 2-usul: Gemini API (proxy orqali, 20 soniya timeout)
+    try:
+        logging.info("Ovoz: Gemini API sinab ko'rilmoqda (20s)...")
+        with open(voice_path, 'rb') as f:
+            audio_data = f.read()
+        
+        prompt = (
+            f"Ushbu ovozli xabardagi gapni to'liq va aniq yozing. "
+            f"Hech narsa qo'shmang, hech narsa tushirmang. "
+            f"Imlo xatolarini tuzating. "
+            f"Natijani {alphabet} alifbosida qaytaring. "
+            f"Faqat matnni qaytaring."
+        )
+        
+        contents = [
+            {
+                "inline_data": {
+                    "mime_type": "audio/ogg",
+                    "data": base64.b64encode(audio_data).decode()
+                }
+            },
+            prompt
+        ]
+        
         response = await asyncio.wait_for(
             client.aio.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-2.0-flash',
                 contents=contents
             ),
-            timeout=30.0
+            timeout=20.0
         )
         if response.text:
             result = response.text.strip().replace("**", "")
-            logging.info("Ovoz: Proxy orqali muvaffaqiyatli!")
+            logging.info("Ovoz: Gemini API muvaffaqiyatli!")
             return result
-    except (asyncio.TimeoutError, Exception) as e:
-        logging.warning(f"Ovoz: Proxy ishlamadi ({e}). To'g'ridan-to'g'ri API ga o'tilmoqda...")
-    
-    # 2-usul: To'g'ridan-to'g'ri Google API (60 soniya)
-    try:
-        logging.info("Ovoz: To'g'ridan-to'g'ri API sinab ko'rilmoqda (60s)...")
-        response = await asyncio.wait_for(
-            direct_client.aio.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=contents
-            ),
-            timeout=60.0
-        )
-        if response.text:
-            result = response.text.strip().replace("**", "")
-            logging.info("Ovoz: To'g'ridan-to'g'ri API muvaffaqiyatli!")
-            return result
-        else:
-            raise ValueError("Ovoz tahlilida bo'sh javob.")
     except asyncio.TimeoutError:
-        logging.error("Ovoz: Barcha usullar 60 soniyadan oshib ketdi.")
-        raise Exception("Ovoz tahlili vaqti tugadi. Iltimos, qayta urinib ko'ring.")
+        logging.warning("Ovoz: Gemini API 20 soniyada javob bermadi.")
     except Exception as e:
-        logging.error(f"Ovoz tahlil xatolik: {e}")
-        raise
+        logging.warning(f"Ovoz: Gemini API xato: {e}")
+    
+    raise Exception("Ovoz tahlili barcha usullarda muvaffaqiyatsiz. Iltimos, qayta urinib ko'ring.")
+
+
+def _speech_recognition_sync(voice_path: str) -> str:
+    """SpeechRecognition bilan sinxron ovoz tahlili."""
+    import subprocess
+    import sys
+    import tempfile
+    
+    # speech_recognition va pydub o'rnatish (agar yo'q bo'lsa)
+    try:
+        import speech_recognition as sr
+    except ImportError:
+        subprocess.run([sys.executable, "-m", "pip", "install", "SpeechRecognition", "pydub"], 
+                      capture_output=True, timeout=60)
+        import speech_recognition as sr
+    
+    # OGG -> WAV konvertatsiya (ffmpeg yoki pydub orqali)
+    wav_path = voice_path + ".wav"
+    
+    try:
+        # ffmpeg orqali konvertatsiya (eng ishonchli)
+        result = subprocess.run(
+            ["ffmpeg", "-i", voice_path, "-ar", "16000", "-ac", "1", "-y", wav_path],
+            capture_output=True, timeout=30
+        )
+        if result.returncode != 0:
+            raise Exception("ffmpeg ishlamadi")
+    except (FileNotFoundError, Exception):
+        # pydub orqali
+        try:
+            from pydub import AudioSegment
+            audio = AudioSegment.from_ogg(voice_path)
+            audio = audio.set_frame_rate(16000).set_channels(1)
+            audio.export(wav_path, format="wav")
+        except Exception as e:
+            raise Exception(f"Ovoz faylini WAV ga o'tkazib bo'lmadi: {e}")
+    
+    # Speech Recognition
+    recognizer = sr.Recognizer()
+    with sr.AudioFile(wav_path) as source:
+        audio = recognizer.record(source)
+    
+    # Tozalash
+    try:
+        os.remove(wav_path)
+    except:
+        pass
+    
+    # Google Speech Recognition (bepul, 50 ta so'rovgacha)
+    try:
+        text = recognizer.recognize_google(audio, language="uz-UZ")
+        return text
+    except sr.UnknownValueError:
+        # O'zbek tilida topolmasa ruscha sinab ko'rish
+        try:
+            text = recognizer.recognize_google(audio, language="ru-RU")
+            return text
+        except:
+            pass
+    except Exception:
+        pass
+    
+    # Oxirgi iloj - inglizcha
+    try:
+        text = recognizer.recognize_google(audio, language="en-US")
+        return text
+    except Exception as e:
+        raise Exception(f"Google Speech API ham ishlamadi: {e}")
 
 
 # ==================== SIFAT BALLI ====================
