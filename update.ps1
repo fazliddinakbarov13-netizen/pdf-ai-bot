@@ -1,33 +1,22 @@
 $ErrorActionPreference = 'SilentlyContinue'
 Stop-Process -Name python -Force
+Start-Sleep 3
 
-$paths = @("C:\pdf-ai-bot", "C:\pdf_bot", "C:\Users\Administrator\Desktop\pdf-ai-bot", "C:\Users\Administrator\Desktop\pdf bot")
 $d = "C:\pdf-ai-bot"
-foreach ($p in $paths) {
-    if (Test-Path $p) {
-        $d = $p
-        break
-    }
-}
-
-if (-Not (Test-Path $d)) {
-    New-Item -ItemType Directory -Force -Path $d
-}
+if (Test-Path "C:\pdf_bot") { $d = "C:\pdf_bot" }
+if (-Not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d }
 cd $d
 
-$pythonCmd = "python"
-$possiblePyPaths = @("python", "C:\Python312\python.exe", "C:\Python311\python.exe", "C:\Python310\python.exe")
-foreach ($py in $possiblePyPaths) {
-    if (Get-Command $py -ErrorAction SilentlyContinue) {
-        $pythonCmd = $py
-        break
-    } elseif (Test-Path $py) {
-        $pythonCmd = $py
-        break
-    }
+$pythonCmd = "C:\Python311\python.exe"
+if (-Not (Test-Path $pythonCmd)) {
+    $pythonCmd = "C:\Python312\python.exe"
+}
+if (-Not (Test-Path $pythonCmd)) {
+    $pythonCmd = "python"
 }
 
-& $pythonCmd -m pip install pdf2docx docx2pdf python-docx PyMuPDF aiohttp nest_asyncio pygetwindow pyautogui pyperclip proxy_requests
+& $pythonCmd -m pip install pdf2docx python-docx PyMuPDF aiohttp pillow python-dotenv google-genai aiogram 2>$null
+
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 Invoke-WebRequest -Uri 'https://github.com/fazliddinakbarov13-netizen/pdf-ai-bot/archive/refs/heads/master.zip' -OutFile 'master.zip'
 Expand-Archive 'master.zip' -DestinationPath 'temp' -Force
@@ -36,5 +25,5 @@ Remove-Item 'master.zip' -Force
 Remove-Item 'temp' -Recurse -Force
 
 $ErrorActionPreference = 'Continue'
-Write-Host "✅ Kod muvaffaqiyatli yangilandi! Bot qayta ishga tushirilmoqda..." -ForegroundColor Green
-Start-Process -FilePath $pythonCmd -ArgumentList "main.py"
+Write-Host "KOD YANGILANDI! Bot ishga tushmoqda..." -ForegroundColor Green
+Start-Process -FilePath $pythonCmd -ArgumentList "main.py" -WorkingDirectory $d
