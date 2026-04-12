@@ -2612,14 +2612,24 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
             output_path = os.path.join(TEMP_DIR, f"{base_name}.docx")
             
             def _convert_pdf_to_word(pdf_path, docx_path, alphabet):
-                from pdf2docx import Converter
+                try:
+                    from pdf2docx import Converter
+                except ImportError:
+                    import subprocess, sys
+                    subprocess.run([sys.executable, "-m", "pip", "install", "pdf2docx", "python-docx", "docx2pdf"])
+                    from pdf2docx import Converter
                 cv = Converter(pdf_path)
                 cv.convert(docx_path)
                 cv.close()
                 
                 # Agar alifbo konvertatsiya kerak bo'lsa
                 if alphabet in ("Lotin", "Kirill"):
-                    from docx import Document as DocxDoc
+                    try:
+                        from docx import Document as DocxDoc
+                    except ImportError:
+                        import subprocess, sys
+                        subprocess.run([sys.executable, "-m", "pip", "install", "python-docx"])
+                        from docx import Document as DocxDoc
                     doc = DocxDoc(docx_path)
                     
                     # Barcha paragraflar ichidagi run larni konvertatsiya
@@ -2667,7 +2677,12 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
             def _convert_word_to_pdf(docx_path, pdf_path, alphabet):
                 # Agar alifbo konvertatsiya kerak — avval Word faylni o'zgartirish
                 if alphabet in ("Lotin", "Kirill"):
-                    from docx import Document as DocxDoc
+                    try:
+                        from docx import Document as DocxDoc
+                    except ImportError:
+                        import subprocess, sys
+                        subprocess.run([sys.executable, "-m", "pip", "install", "python-docx"])
+                        from docx import Document as DocxDoc
                     doc = DocxDoc(docx_path)
                     
                     for para in doc.paragraphs:
@@ -2703,7 +2718,12 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                         raise Exception(f"LibreOffice PDF ga o'tkaza olmadi: {process.stderr.decode('utf-8', errors='ignore')}")
                 else:
                     # Fallback to docx2pdf for testing locally if LibreOffice doesn't exist
-                    from docx2pdf import convert as docx2pdf_convert
+                    try:
+                        from docx2pdf import convert as docx2pdf_convert
+                    except ImportError:
+                        import subprocess, sys
+                        subprocess.run([sys.executable, "-m", "pip", "install", "docx2pdf"])
+                        from docx2pdf import convert as docx2pdf_convert
                     docx2pdf_convert(docx_path, pdf_path)
             
             try:
