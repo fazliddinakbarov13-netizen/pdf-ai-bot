@@ -2615,9 +2615,23 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                 try:
                     from pdf2docx import Converter
                 except ImportError:
-                    import subprocess, sys
-                    subprocess.run([sys.executable, "-m", "pip", "install", "pdf2docx", "python-docx", "docx2pdf"])
+                    import subprocess, sys, time
+                    # Pip install with detailed logging
+                    logger.info("pdf2docx topilmadi, o'rnatilmoqda...")
+                    try:
+                        subprocess.run([sys.executable, "-m", "pip", "install", "pdf2docx", "python-docx", "docx2pdf"], check=True)
+                    except Exception as e:
+                        logger.error(f"Pip xatosi (pdf2docx): {e}")
+                    time.sleep(2)
+                    
+                    try:
+                        import importlib, site
+                        importlib.reload(site)
+                    except:
+                        pass
+                        
                     from pdf2docx import Converter
+                
                 cv = Converter(pdf_path)
                 cv.convert(docx_path)
                 cv.close()
@@ -2627,8 +2641,20 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                     try:
                         from docx import Document as DocxDoc
                     except ImportError:
-                        import subprocess, sys
-                        subprocess.run([sys.executable, "-m", "pip", "install", "python-docx"])
+                        import subprocess, sys, time
+                        logger.info("python-docx topilmadi, o'rnatilmoqda...")
+                        try:
+                            subprocess.run([sys.executable, "-m", "pip", "install", "python-docx"], check=True)
+                        except Exception as e:
+                            logger.error(f"Pip xatosi (python-docx): {e}")
+                        time.sleep(2)
+                        
+                        try:
+                            import importlib, site
+                            importlib.reload(site)
+                        except:
+                            pass
+                            
                         from docx import Document as DocxDoc
                     doc = DocxDoc(docx_path)
                     
@@ -2680,8 +2706,20 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                     try:
                         from docx import Document as DocxDoc
                     except ImportError:
-                        import subprocess, sys
-                        subprocess.run([sys.executable, "-m", "pip", "install", "python-docx"])
+                        import subprocess, sys, time
+                        logger.info("python-docx topilmadi, o'rnatilmoqda...")
+                        try:
+                            subprocess.run([sys.executable, "-m", "pip", "install", "python-docx"], check=True)
+                        except Exception as e:
+                            logger.error(f"Pip xatosi (python-docx): {e}")
+                        time.sleep(2)
+                        
+                        try:
+                            import importlib, site
+                            importlib.reload(site)
+                        except:
+                            pass
+                            
                         from docx import Document as DocxDoc
                     doc = DocxDoc(docx_path)
                     
@@ -2721,8 +2759,20 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                     try:
                         from docx2pdf import convert as docx2pdf_convert
                     except ImportError:
-                        import subprocess, sys
-                        subprocess.run([sys.executable, "-m", "pip", "install", "docx2pdf"])
+                        import subprocess, sys, time
+                        logger.info("docx2pdf topilmadi, o'rnatilmoqda...")
+                        try:
+                            subprocess.run([sys.executable, "-m", "pip", "install", "docx2pdf"], check=True)
+                        except Exception as e:
+                            logger.error(f"Pip xatosi (docx2pdf): {e}")
+                        time.sleep(2)
+                        
+                        try:
+                            import importlib, site
+                            importlib.reload(site)
+                        except:
+                            pass
+                            
                         from docx2pdf import convert as docx2pdf_convert
                     docx2pdf_convert(docx_path, pdf_path)
             
