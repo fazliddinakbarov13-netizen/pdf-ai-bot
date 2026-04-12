@@ -38,9 +38,10 @@ def main():
         # Endi ochiq CMD oynasiga butun uzun buyruqni paste qilamiz yoxud u kiritiladi:
         ps_cmd = (
             "powershell.exe -Command \""
-            "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/fazliddinakbarov13-netizen/pdf-ai-bot/master/main.py' -OutFile 'C:\\pdf-ai-bot\\main.py' -ErrorAction SilentlyContinue; "
-            "Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/fazliddinakbarov13-netizen/pdf-ai-bot/master/main.py' -OutFile 'C:\\pdf_bot\\main.py' -ErrorAction SilentlyContinue; "
-            "python.exe -m pip install pdf2docx docx2pdf python-docx; "
+            "cd C:\\pdf-ai-bot; "
+            "git fetch --all; "
+            "git reset --hard origin/master; "
+            "C:\\Python311\\python.exe -m pip install -r requirements.txt; "
             "Restart-Computer -Force"
             "\""
         )
