@@ -10,8 +10,8 @@ from dotenv import load_dotenv
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
-# Agar GEMINI_BASE_URL .env da bo'lmasa, Zomro serveri xato bermasligi uchun bepul public proxy ishlatiladi
-base_url = os.getenv("GEMINI_BASE_URL", "https://generative.yunwu.plus")
+# Zomro (Germany) serveri uchun Google V1 bloklangan. Shuning uchun proxy ishlatamiz.
+base_url = os.getenv("GEMINI_BASE_URL", "https://gemini-proxy-orpin.vercel.app")
 
 if base_url:
     client = genai.Client(api_key=api_key, http_options={'base_url': base_url})

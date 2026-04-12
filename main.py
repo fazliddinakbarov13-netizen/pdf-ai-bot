@@ -2618,7 +2618,7 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                     import subprocess, sys, time, importlib, os
                     logger.info("pdf2docx topilmadi, o'rnatilmoqda...")
                     try:
-                        subprocess.run([sys.executable, "-m", "pip", "install", "--user", "pdf2docx", "python-docx", "PyMuPDF"], check=True)
+                        subprocess.run([sys.executable, "-m", "pip", "install", "pdf2docx", "python-docx", "PyMuPDF"], check=True)
                     except Exception as e:
                         logger.error(f"Pip xatosi (pdf2docx): {e}")
                     time.sleep(2)
