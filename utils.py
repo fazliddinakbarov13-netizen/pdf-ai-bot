@@ -377,11 +377,41 @@ def _speech_recognition_sync(voice_path: str) -> str:
     
     # OGG -> WAV konvertatsiya (ffmpeg yoki pydub orqali)
     wav_path = voice_path + ".wav"
+    ffmpeg_exe = "ffmpeg"
+    
+    import shutil
+    import urllib.request
+    import zipfile
+    
+    # ffmpeg o'rnatilganini tekshiramiz
+    if not shutil.which("ffmpeg"):
+        ffmpeg_bin_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg-bin")
+        local_ffmpeg = os.path.join(ffmpeg_bin_dir, "ffmpeg.exe")
+        
+        if not os.path.exists(local_ffmpeg):
+            try:
+                logging.info("ffmpep topilmadi! Standalone versiya yuklanmoqda...")
+                os.makedirs(ffmpeg_bin_dir, exist_ok=True)
+                zip_path = os.path.join(ffmpeg_bin_dir, "ffmpeg.zip")
+                urllib.request.urlretrieve("https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip", zip_path)
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    for el in zip_ref.namelist():
+                        if el.endswith("ffmpeg.exe"):
+                            zip_ref.extract(el, ffmpeg_bin_dir)
+                            extracted_path = os.path.join(ffmpeg_bin_dir, el)
+                            shutil.move(extracted_path, local_ffmpeg)
+                            break
+                os.remove(zip_path)
+            except Exception as e:
+                logging.warning(f"ffmpeg yuklashda xatolik: {e}")
+        
+        if os.path.exists(local_ffmpeg):
+            ffmpeg_exe = local_ffmpeg
     
     try:
         # ffmpeg orqali konvertatsiya (eng ishonchli)
         result = subprocess.run(
-            ["ffmpeg", "-i", voice_path, "-ar", "16000", "-ac", "1", "-y", wav_path],
+            [ffmpeg_exe, "-i", voice_path, "-ar", "16000", "-ac", "1", "-y", wav_path],
             capture_output=True, timeout=30
         )
         if result.returncode != 0:
@@ -390,6 +420,9 @@ def _speech_recognition_sync(voice_path: str) -> str:
         # pydub orqali
         try:
             from pydub import AudioSegment
+            # Pydub uchun ham ffmpeg yo'lini ko'rsatamiz
+            if ffmpeg_exe != "ffmpeg":
+                AudioSegment.converter = ffmpeg_exe
             audio = AudioSegment.from_ogg(voice_path)
             audio = audio.set_frame_rate(16000).set_channels(1)
             audio.export(wav_path, format="wav")
@@ -397,6 +430,9 @@ def _speech_recognition_sync(voice_path: str) -> str:
             raise Exception(f"Ovoz faylini WAV ga o'tkazib bo'lmadi: {e}")
     
     # Speech Recognition
+    if not os.path.exists(wav_path):
+        raise Exception("WAV fayl yaratilmadi!")
+        
     recognizer = sr.Recognizer()
     with sr.AudioFile(wav_path) as source:
         audio = recognizer.record(source)
