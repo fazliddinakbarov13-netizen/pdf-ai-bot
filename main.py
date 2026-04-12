@@ -645,7 +645,7 @@ async def translate_alphabet_callback(callback: CallbackQuery, state: FSMContext
         logger.error(f"Tarjima xatolik: {e}", exc_info=True)
         error_msg = "❌ <b>Xatolik yuz berdi</b>\n\n🔄 Qayta urinib ko'ring."
         if ADMIN_ID and callback.from_user.id == ADMIN_ID:
-            error_msg += f"\n\n🔧 <code>{str(e)[:500]}</code>"
+            error_msg += f"\n\n🔧 <code>{html_module.escape(str(e)[:500])}</code>"
         await callback.message.answer(error_msg, reply_markup=get_after_doc_keyboard(), parse_mode="HTML")
         _cleanup_file(image_path)
         if 'cropped_path' in locals() and cropped_path:
@@ -1252,7 +1252,7 @@ async def _process_single_image(message, state: FSMContext, user_id: int, passwo
             "Muammo davom etsa /start bosing."
         )
         if ADMIN_ID and user_id == ADMIN_ID:
-            error_msg += f"\n\n🔧 <code>{str(e)[:500]}</code>"
+            error_msg += f"\n\n🔧 <code>{html_module.escape(str(e)[:500])}</code>"
         await message.answer(error_msg, reply_markup=get_after_doc_keyboard(), parse_mode="HTML")
         _cleanup_file(image_path)
         if 'cropped_path' in locals() and cropped_path:
@@ -1625,7 +1625,7 @@ async def multi_alphabet_callback(callback: CallbackQuery, state: FSMContext):
             "Muammo davom etsa /start bosing."
         )
         if ADMIN_ID and callback.from_user.id == ADMIN_ID:
-            error_msg += f"\n\n🔧 <code>{str(e)[:500]}</code>"
+            error_msg += f"\n\n🔧 <code>{html_module.escape(str(e)[:500])}</code>"
         await callback.message.answer(error_msg, reply_markup=get_after_doc_keyboard(), parse_mode="HTML")
         for img in images:
             _cleanup_file(img)
@@ -2165,7 +2165,7 @@ async def voice_alphabet_callback(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ovoz xatolik: {e}", exc_info=True)
         error_msg = "❌ <b>Xatolik yuz berdi</b>\n\n🔄 Qayta urinib ko'ring."
         if ADMIN_ID and callback.from_user.id == ADMIN_ID:
-            error_msg += f"\n\n🔧 <code>{str(e)[:500]}</code>"
+            error_msg += f"\n\n🔧 <code>{html_module.escape(str(e)[:500])}</code>"
         await callback.message.answer(error_msg, reply_markup=get_after_doc_keyboard(), parse_mode="HTML")
         _cleanup_file(voice_path)
         if 'output_path' in locals() and output_path:
@@ -2886,7 +2886,7 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Konvertatsiya xatolik: {e}", exc_info=True)
         error_msg = "❌ <b>Xatolik yuz berdi</b>\n\n🔄 Qayta urinib ko'ring."
         if ADMIN_ID and user_id == ADMIN_ID:
-            error_msg += f"\n\n🔧 <code>{str(e)[:500]}</code>"
+            error_msg += f"\n\n🔧 <code>{html_module.escape(str(e)[:500])}</code>"
         await callback.message.answer(error_msg, reply_markup=get_after_doc_keyboard(), parse_mode="HTML")
         _cleanup_file(file_path)
         if output_path:
