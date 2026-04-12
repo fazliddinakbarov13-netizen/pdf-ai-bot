@@ -2691,9 +2691,20 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                     
                     doc.save(docx_path)
                 
-                # docx2pdf orqali PDF ga aylantirish (MS Word ishlatadi)
-                from docx2pdf import convert as docx2pdf_convert
-                docx2pdf_convert(docx_path, pdf_path)
+                # LibreOffice orqali PDF ga aylantirish (VPS dagi LibreOffice)
+                # soffice --headless --convert-to pdf file.docx --outdir directory
+                libreoffice_path = r"C:\Program Files\LibreOffice\program\soffice.exe"
+                if os.path.exists(libreoffice_path):
+                    import subprocess
+                    out_dir = os.path.dirname(pdf_path)
+                    cmd = [libreoffice_path, "--headless", "--convert-to", "pdf", docx_path, "--outdir", out_dir]
+                    process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    if process.returncode != 0:
+                        raise Exception(f"LibreOffice PDF ga o'tkaza olmadi: {process.stderr.decode('utf-8', errors='ignore')}")
+                else:
+                    # Fallback to docx2pdf for testing locally if LibreOffice doesn't exist
+                    from docx2pdf import convert as docx2pdf_convert
+                    docx2pdf_convert(docx_path, pdf_path)
             
             try:
                 await status_msg.edit_text(
