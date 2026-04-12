@@ -2772,11 +2772,47 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                 
                 if soffice_exec:
                     import subprocess
+                    import tempfile
+                    import shutil
+                    import uuid
+                    
                     out_dir = os.path.dirname(pdf_path)
-                    cmd = [soffice_exec, "--headless", "--convert-to", "pdf", docx_path, "--outdir", out_dir]
-                    process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    if process.returncode != 0:
-                        raise Exception(f"LibreOffice PDF ga o'tkaza olmadi: {process.stderr.decode('utf-8', errors='ignore')}")
+                    
+                    # 1. Unicode path xatolarini oldini olish uchun faylni vaqtincha xavfsiz (ASCII) nomga o'tkazamiz
+                    safe_basename = f"temp_{uuid.uuid4().hex}"
+                    safe_docx_path = os.path.join(out_dir, f"{safe_basename}.docx")
+                    safe_pdf_path = os.path.join(out_dir, f"{safe_basename}.pdf")
+                    
+                    try:
+                        shutil.copy2(docx_path, safe_docx_path)
+                        
+                        # 2. LibreOffice ning yashirin fon jarayonlariga aralashmaslik uchun vaqtinchalik profil yaratamiz
+                        with tempfile.TemporaryDirectory() as profile_dir:
+                            profile_uri = "file:///" + profile_dir.replace("\\", "/")
+                            cmd = [
+                                soffice_exec,
+                                f"-env:UserInstallation={profile_uri}",
+                                "--headless",
+                                "--convert-to", "pdf:writer_pdf_Export",
+                                safe_docx_path,
+                                "--outdir", out_dir
+                            ]
+                            process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+                            
+                        # 3. Natijani tekshirish
+                        if not os.path.exists(safe_pdf_path) or os.path.getsize(safe_pdf_path) == 0:
+                            raise Exception(f"LibreOffice PDF faylini yarata olmadi. stderr: {process.stderr.decode('utf-8', errors='ignore')}")
+                            
+                        # 4. Asl nomiga qaytaramiz
+                        if os.path.exists(pdf_path):
+                            os.remove(pdf_path)
+                        shutil.move(safe_pdf_path, pdf_path)
+                        
+                    finally:
+                        if os.path.exists(safe_docx_path):
+                            os.remove(safe_docx_path)
+                        if os.path.exists(safe_pdf_path):
+                            os.remove(safe_pdf_path)
                 else:
                     # Fallback to docx2pdf for testing locally if LibreOffice doesn't exist
                     try:
