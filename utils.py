@@ -26,6 +26,55 @@ else:
 # Ovoz va boshqa og'ir zaproslar uchun to'g'ridan-to'g'ri API
 direct_client = genai.Client(api_key=api_key, http_options={'timeout': 60.0})
 
+CYRILLIC_TO_LATIN = {
+    'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo', 'Ж': 'J',
+    'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O',
+    'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'X', 'Ц': 'Ts',
+    'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Sh', 'Ъ': "'", 'Ы': 'I', 'Ь': '', 'Э': 'E', 'Ю': 'Yu',
+    'Я': 'Ya', 'Ў': 'O\'', 'Қ': 'Q', 'Ғ': 'G\'', 'Ҳ': 'H',
+    
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'j',
+    'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+    'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'x', 'ц': 'ts',
+    'ч': 'ch', 'ш': 'sh', 'щ': 'sh', 'ъ': "'", 'ы': 'i', 'ь': '', 'э': 'e', 'ю': 'yu',
+    'я': 'ya', 'ў': "o'", 'қ': 'q', 'ғ': "g'", 'ҳ': 'h'
+}
+
+def transliterate_to_latin(text: str) -> str:
+    """Kirill yozuvini Lotin yozuviga o'zgartiradi."""
+    if not text:
+        return text
+    result = []
+    i = 0
+    while i < len(text):
+        char = text[i]
+        
+        # Maxsus o'zgarishlar (misol: E harfi probeldan yoki unlidan keyin 'Ye' bo'ladi, boshqa payt 'E')
+        if char == 'Е':
+            if i == 0 or text[i-1] in ' \n\t-АЕЁИОУЫЭЮЯаеёиоуыэюя':
+                result.append('Ye')
+            else:
+                result.append('e')
+        elif char == 'е':
+            if i == 0 or text[i-1] in ' \n\t-АЕЁИОУЫЭЮЯаеёиоуыэюя':
+                result.append('ye')
+            else:
+                result.append('e')
+        elif char == 'Ц':
+            if i == 0 or text[i-1] in ' \n\t-АЕЁИОУЫЭЮЯаеёиоуыэюя':
+                result.append('S')
+            else:
+                result.append('Ts')
+        elif char == 'ц':
+            if i == 0 or text[i-1] in ' \n\t-АЕЁИОУЫЭЮЯаеёиоуыэюя':
+                result.append('s')
+            else:
+                result.append('ts')
+        else:
+            result.append(CYRILLIC_TO_LATIN.get(char, char))
+        i += 1
+    return "".join(result)
+
 # ==================== OCR PROMPT ====================
 
 STRUCTURED_OCR_PROMPT = """You are an expert document OCR system for official Uzbek documents.
@@ -406,63 +455,33 @@ async def translate_text(text: str, target_lang: str) -> str:
 # ==================== OVOZLI XABAR ====================
 
 async def process_voice_async(voice_path: str, alphabet: str) -> str:
-    """Ovozli xabarni matnga aylantirish. SpeechRecognition + Gemini fallback."""
-    
-    # 1-usul: SpeechRecognition (Google Speech API - bepul, ishonchli)
+    """Ovozli xabarni matnga aylantirish. OpenAI Whisper."""
+    import logging
     try:
-        logging.info("Ovoz: SpeechRecognition usuli sinab ko'rilmoqda...")
-        text = await asyncio.to_thread(_speech_recognition_sync, voice_path)
-        if text and len(text.strip()) > 2:
-            logging.info(f"Ovoz: SpeechRecognition muvaffaqiyatli! ({len(text)} belgi)")
-            # Agar alifbo konversiyasi kerak bo'lsa
+        logging.info("Ovoz: OpenAI Whisper usuli sinab ko'rilmoqda...")
+        with open(voice_path, 'rb') as audio_file:
+            response = await openai_client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                prompt="O'zbek tilidagi jonli ovozli xabar. Iltimos, so'zlarni xatosiz va tushunarli qilib matnga o'giring."
+            )
+        
+        text = response.text
+        if text and len(text.strip()) > 1:
+            logging.info(f"Ovoz: OpenAI Whisper muvaffaqiyatli! ({len(text)} belgi)")
+            # Alphabetni tekshirib to'g'rilash (Whisper ba'zan Kirill yoki Lotinning aralashida berishi mumkin)
             if alphabet == "Kirill":
                 from utils import convert_latin_to_cyrillic
                 text = convert_latin_to_cyrillic(text)
+            elif alphabet == "Lotin":
+                from utils import transliterate_to_latin
+                text = transliterate_to_latin(text)
             return text.strip()
+            
     except Exception as e:
-        logging.warning(f"Ovoz: SpeechRecognition ishlamadi: {e}")
-    
-    # 2-usul: Gemini API (proxy orqali, 20 soniya timeout)
-    try:
-        logging.info("Ovoz: Gemini API sinab ko'rilmoqda (20s)...")
-        with open(voice_path, 'rb') as f:
-            audio_data = f.read()
+        logging.warning(f"Ovoz: OpenAI Whisper xato berdi: {e}")
         
-        prompt = (
-            f"Ushbu ovozli xabardagi gapni to'liq va aniq yozing. "
-            f"Hech narsa qo'shmang, hech narsa tushirmang. "
-            f"Imlo xatolarini tuzating. "
-            f"Natijani {alphabet} alifbosida qaytaring. "
-            f"Faqat matnni qaytaring."
-        )
-        
-        contents = [
-            {
-                "inline_data": {
-                    "mime_type": "audio/ogg",
-                    "data": base64.b64encode(audio_data).decode()
-                }
-            },
-            prompt
-        ]
-        
-        response = await asyncio.wait_for(
-            client.aio.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=contents
-            ),
-            timeout=20.0
-        )
-        if response.text:
-            result = response.text.strip().replace("**", "")
-            logging.info("Ovoz: Gemini API muvaffaqiyatli!")
-            return result
-    except asyncio.TimeoutError:
-        logging.warning("Ovoz: Gemini API 20 soniyada javob bermadi.")
-    except Exception as e:
-        logging.warning(f"Ovoz: Gemini API xato: {e}")
-    
-    raise Exception("Ovoz tahlili barcha usullarda muvaffaqiyatsiz. Iltimos, qayta urinib ko'ring.")
+    raise Exception("Ovoz tahlili muvaffaqiyatsiz. Iltimos, aniqroq gapirgan holda qayta yuboring.")
 
 
 def _speech_recognition_sync(voice_path: str) -> str:
