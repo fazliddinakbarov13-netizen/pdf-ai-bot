@@ -601,19 +601,22 @@ async def calculate_quality_score(text: str) -> dict:
     
     return {"ocr": 0, "formatting": 0, "grammar": 0, "overall": 0}
 
-import os
-import fitz
-import pytesseract
-from docx import Document
+# os va fitz allaqachon yuqorida import qilingan
+# pytesseract va Document faqat kerak bo'lganda import qilinadi (lazy)
 
-# Tesseract executable path on VPS
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 def extract_text_via_tesseract(pdf_path: str, docx_path: str, alphabet: str):
     """
     Skanerlangan PDF fayldan rasmlarni kesib olib, Tesseract yordamida o'qiydi 
     va transliteratsiya qilib Word (docx) fayliga joylaydi.
     """
+    import fitz
+    import pytesseract
+    from docx import Document
+    
+    # Tesseract executable path
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+    
     doc = fitz.open(pdf_path)
     word_doc = Document()
     
