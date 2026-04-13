@@ -2678,7 +2678,9 @@ OUTPUT FORMAT RULES:
 6. Do not wrap the output in markdown code blocks (e.g., no ```html). Return raw text.
 7. Extract EVERY word - do not skip anything.
 
-ALPHABET: Output MUST be in {alphabet_label}."""
+TRANSLITERATION RULE:
+The output text MUST be fully transliterated or written in {alphabet_label}.
+If {alphabet_label} is "O'zbek Latin (Lotin)" and the image contains Cyrillic (Кирилл) text, you MUST transliterate EVERY SINGLE WORD into Latin script. DO NOT output any Cyrillic characters!"""
                         
                         page_text = ""
                         for attempt in range(3):
