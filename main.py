@@ -2789,9 +2789,14 @@ Return ONLY the extracted text with formatting tags."""
                         if page_num < len(pdf) - 1:
                             word_doc.add_page_break()
                     
+                    if len(word_doc.paragraphs) == 0:
+                        pdf.close()
+                        return False
+                        
                     word_doc.save(docx_path)
                     pdf.close()
                     logger.info(f"Skanerlangan PDF → Word (AI OCR) muvaffaqiyatli: {docx_path}")
+                    return True
                 
                 try:
                     await status_msg.edit_text(
@@ -2803,7 +2808,24 @@ Return ONLY the extracted text with formatting tags."""
                 except Exception:
                     pass
                 
-                await _convert_scanned_ai(file_path, output_path, selected_alphabet)
+                success = await _convert_scanned_ai(file_path, output_path, selected_alphabet)
+                if not success:
+                    logger.warning("Gemini AI OCR bo'sh natija qaytardi. Tesseract fallback ishga tushirilmoqda...")
+                    def _convert_scanned(pdf_path, docx_path, alphabet):
+                        from utils import extract_text_via_tesseract
+                        extract_text_via_tesseract(pdf_path, docx_path, alphabet)
+                    
+                    try:
+                        await status_msg.edit_text(
+                            f"{direction_emoji} <b>{direction_label}</b>\n\n"
+                            f"⚠️ <i>AI vaqtinchalik xizmat doirasidan tashqarida. Zaxira OCR (Tesseract) ishlatilmoqda...</i>\n"
+                            f"▓▓▓░░░░░░░ 40%",
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+                        
+                    await asyncio.to_thread(_convert_scanned, file_path, output_path, selected_alphabet)
             else:
                 # Oddiy matnli PDF — professional konvertor bilan
                 doc.close()
