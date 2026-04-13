@@ -848,8 +848,6 @@ async def raw_format_callback(callback: CallbackQuery, state: FSMContext):
             parse_mode="HTML"
         )
         await callback.message.answer("Natija yoqdimi?", reply_markup=get_feedback_keyboard(doc_hash))
-        await callback.message.answer("Natija yoqdimi?", reply_markup=get_feedback_keyboard(doc_hash))
-        await callback.message.answer("Natija yoqdimi?", reply_markup=get_feedback_keyboard(doc_hash))
         
         _cleanup_file(image_path)
         _cleanup_file(output_path)
@@ -1803,8 +1801,6 @@ async def multi_raw_format_callback(callback: CallbackQuery, state: FSMContext):
             parse_mode="HTML"
         )
         await callback.message.answer("Natija yoqdimi?", reply_markup=get_feedback_keyboard(doc_hash))
-        await callback.message.answer("Natija yoqdimi?", reply_markup=get_feedback_keyboard(doc_hash))
-        await callback.message.answer("Natija yoqdimi?", reply_markup=get_feedback_keyboard(doc_hash))
         
         _cleanup_file(output_path)
         for img in images:
@@ -2346,7 +2342,6 @@ async def smart_clipboard_handler(message: types.Message, state: FSMContext):
             parse_mode="HTML"
         )
         await message.answer("Natija yoqdimi?", reply_markup=get_feedback_keyboard(doc_hash))
-        await message.answer("Natija yoqdimi?", reply_markup=get_feedback_keyboard(doc_hash))
         
         _cleanup_file(output_path)
         
@@ -2623,13 +2618,15 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                 total_page_area += page.rect.width * page.rect.height
                 for img in page.get_images():
                     try:
-                        bbox = page.get_image_bbox(img[0])
+                        bbox = page.get_image_bbox(img)
                         total_image_area += bbox.width * bbox.height
-                    except:
+                    except Exception:
                         pass
             
+            text_len = len(total_text.strip())
             image_ratio = total_image_area / total_page_area if total_page_area > 0 else 0
-            is_scanned = len(total_text.strip()) < 50 or image_ratio > 0.60
+            is_scanned = text_len < 50 or image_ratio > 0.60
+            logger.info(f"PDF tahlil: text_len={text_len}, image_ratio={image_ratio:.2f}, is_scanned={is_scanned}")
             
             if is_scanned:
                 try:
@@ -2666,6 +2663,18 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                 if not combined_text.strip():
                     raise Exception("PDF dan matn o'qib bo'lmadi.")
                 
+                # OCR dan chiqgan matnni kerakli alifboga o'girish
+                if selected_alphabet == "Lotin":
+                    from utils import detect_script, convert_cyrillic_to_latin
+                    if detect_script(combined_text) == "kirill":
+                        combined_text = convert_cyrillic_to_latin(combined_text)
+                        logger.info("OCR: Kirill → Lotin konvertatsiya qilindi")
+                elif selected_alphabet == "Kirill":
+                    from utils import detect_script, convert_latin_to_cyrillic
+                    if detect_script(combined_text) == "lotin":
+                        combined_text = convert_latin_to_cyrillic(combined_text)
+                        logger.info("OCR: Lotin → Kirill konvertatsiya qilindi")
+                
                 try:
                     await status_msg.edit_text(
                         f"{direction_emoji} <b>{direction_label}</b>\n\n"
@@ -2687,6 +2696,7 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                         cv = Converter(pdf_path)
                         cv.convert(docx_path)
                         cv.close()
+                        logger.info(f"pdf2docx muvaffaqiyatli: {docx_path}")
                     except ImportError:
                         import subprocess, sys
                         logger.info("pdf2docx topilmadi, o'rnatilmoqda...")
@@ -2704,8 +2714,13 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                     
                     # Agar alifbo konvertatsiya kerak bo'lsa
                     if alphabet in ("Lotin", "Kirill"):
-                        from utils import process_docx_alphabet
-                        process_docx_alphabet(docx_path, alphabet)
+                        try:
+                            from utils import process_docx_alphabet
+                            logger.info(f"process_docx_alphabet boshlanmoqda: alphabet={alphabet}")
+                            process_docx_alphabet(docx_path, alphabet)
+                            logger.info(f"process_docx_alphabet muvaffaqiyatli tugadi")
+                        except Exception as e:
+                            logger.error(f"process_docx_alphabet xato: {e}", exc_info=True)
                 
                 try:
                     await status_msg.edit_text(
@@ -2718,6 +2733,16 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                     pass
                 
                 await asyncio.to_thread(_convert_pdf_to_word, file_path, output_path, selected_alphabet)
+            
+            # === YAKUNIY TEKSHIRISH: Word fayl ichidagi matn to'g'ri alifbodami? ===
+            if selected_alphabet in ("Lotin", "Kirill") and os.path.exists(output_path):
+                try:
+                    from utils import process_docx_alphabet
+                    logger.info(f"Yakuniy alifbo tekshirish va tuzatish: {selected_alphabet}")
+                    process_docx_alphabet(output_path, selected_alphabet)
+                    logger.info("Yakuniy alifbo konvertatsiya muvaffaqiyatli")
+                except Exception as e:
+                    logger.error(f"Yakuniy alifbo konvertatsiya xato: {e}", exc_info=True)
             
             out_filename = os.path.splitext(original_name)[0] + ".docx"
             doc_file = FSInputFile(output_path, filename=out_filename)
@@ -2867,8 +2892,6 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
             caption=caption,
             parse_mode="HTML"
         )
-        await callback.message.answer("Natija yoqdimi?", reply_markup=get_feedback_keyboard(doc_hash))
-        await callback.message.answer("Natija yoqdimi?", reply_markup=get_feedback_keyboard(doc_hash))
         await callback.message.answer("Natija yoqdimi?", reply_markup=get_feedback_keyboard(doc_hash))
         
         _cleanup_file(file_path)

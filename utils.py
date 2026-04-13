@@ -131,10 +131,21 @@ def process_docx_alphabet(docx_path: str, alphabet: str):
     import xml.sax.saxutils as saxutils
     import shutil
 
+    logging.info(f"process_docx_alphabet boshlandi: path={docx_path}, alphabet={alphabet}")
+
+    if not os.path.exists(docx_path):
+        logging.error(f"DOCX fayl topilmadi: {docx_path}")
+        return
+
     temp_dir = tempfile.mkdtemp()
     
-    with zipfile.ZipFile(docx_path, 'r') as zip_ref:
-        zip_ref.extractall(temp_dir)
+    try:
+        with zipfile.ZipFile(docx_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+    except Exception as e:
+        logging.error(f"ZIP ochishda xato: {e}")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return
     
     xml_files = []
     for root, dirs, files in os.walk(temp_dir):
@@ -142,18 +153,30 @@ def process_docx_alphabet(docx_path: str, alphabet: str):
             if file.endswith('.xml'):
                 xml_files.append(os.path.join(root, file))
 
+    logging.info(f"Topilgan XML fayllar soni: {len(xml_files)}")
+
+    total_replacements = 0
+
     def transliterate_match(match):
+        nonlocal total_replacements
         prefix = match.group(1)
         raw_text = match.group(2)
         suffix = match.group(3)
         
+        if not raw_text.strip():
+            return match.group(0)
+        
         # XML entities dan oddiy matnga (masalan, &amp; -> &)
         text = saxutils.unescape(raw_text)
         
+        original = text
         if alphabet == "Kirill":
             text = convert_latin_to_cyrillic(text)
         else:
             text = convert_cyrillic_to_latin(text)
+        
+        if text != original:
+            total_replacements += 1
             
         # Orqaga XML entities ga (masalan, & -> &amp;)
         text = saxutils.escape(text)
@@ -163,6 +186,7 @@ def process_docx_alphabet(docx_path: str, alphabet: str):
     # <w:t> ... </w:t> yoki <w:t xml:space="preserve"> ... </w:t> ni ushlash
     pattern = re.compile(r'(<w:t[^>]*>)(.*?)(</w:t>)', flags=re.DOTALL)
     
+    modified_files = 0
     for xml_file in xml_files:
         try:
             with open(xml_file, 'r', encoding='utf-8') as f:
@@ -173,20 +197,28 @@ def process_docx_alphabet(docx_path: str, alphabet: str):
             if new_content != content:
                 with open(xml_file, 'w', encoding='utf-8') as f:
                     f.write(new_content)
+                modified_files += 1
         except Exception as e:
-            pass
+            logging.error(f"XML fayl xatosi ({os.path.basename(xml_file)}): {e}")
             
+    logging.info(f"process_docx_alphabet: {modified_files} ta fayl o'zgartirildi, {total_replacements} ta matn o'girildi")
+    
     # Qayta ZIP (docx) ga arxivlash
     new_docx_path = docx_path + ".new.docx"
-    with zipfile.ZipFile(new_docx_path, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
-        for root, dirs, files in os.walk(temp_dir):
-            for file in files:
-                file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, temp_dir)
-                zip_ref.write(file_path, arcname)
-                
-    shutil.move(new_docx_path, docx_path)
-    shutil.rmtree(temp_dir, ignore_errors=True)
+    try:
+        with zipfile.ZipFile(new_docx_path, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, temp_dir)
+                    zip_ref.write(file_path, arcname)
+                    
+        shutil.move(new_docx_path, docx_path)
+        logging.info(f"process_docx_alphabet muvaffaqiyatli tugadi: {docx_path}")
+    except Exception as e:
+        logging.error(f"DOCX qayta saqlashda xato: {e}")
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 # ==================== RASM YAXSHILASH ====================
