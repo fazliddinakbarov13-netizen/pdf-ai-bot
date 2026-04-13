@@ -2954,6 +2954,8 @@ If {alphabet_label} is "O'zbek Latin (Lotin)" and the image contains Cyrillic (Ð
                     abs_docx = os.path.abspath(docx_path)
                     abs_pdf = os.path.abspath(pdf_path)
                     try:
+                        import pythoncom
+                        pythoncom.CoInitialize()
                         from docx2pdf import convert as docx2pdf_convert
                         docx2pdf_convert(abs_docx, abs_pdf)
                     except ImportError:
