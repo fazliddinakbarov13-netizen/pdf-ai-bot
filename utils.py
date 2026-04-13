@@ -177,102 +177,41 @@ def detect_script(text: str) -> str:
 
 
 def process_docx_alphabet(docx_path: str, alphabet: str):
-    """Word fayl ichidagi barcha XML qismlarini xavfsiz o'qib, alifboni transliteratsiya qiladi."""
-    import zipfile
-    import os
-    import tempfile
-    import re
-    import xml.sax.saxutils as saxutils
-    import shutil
-
-    logging.info(f"process_docx_alphabet boshlandi: path={docx_path}, alphabet={alphabet}")
-
-    if not os.path.exists(docx_path):
-        logging.error(f"DOCX fayl topilmadi: {docx_path}")
-        return
-
-    temp_dir = tempfile.mkdtemp()
-    
+    """Word fayli matnini xavfsiz (docx library orqali) o'zgartiradi."""
+    import logging
     try:
-        with zipfile.ZipFile(docx_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
-    except Exception as e:
-        logging.error(f"ZIP ochishda xato: {e}")
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        return
-    
-    xml_files = []
-    for root, dirs, files in os.walk(temp_dir):
-        for file in files:
-            if file.endswith('.xml'):
-                xml_files.append(os.path.join(root, file))
-
-    logging.info(f"Topilgan XML fayllar soni: {len(xml_files)}")
-
-    total_replacements = 0
-
-    def transliterate_match(match):
-        nonlocal total_replacements
-        prefix = match.group(1)
-        raw_text = match.group(2)
-        suffix = match.group(3)
+        import docx
+        doc = docx.Document(docx_path)
         
-        if not raw_text.strip():
-            return match.group(0)
+        def process_text(text: str) -> str:
+            if not text.strip():
+                return text
+            if alphabet == "Kirill":
+                from utils import convert_latin_to_cyrillic
+                return convert_latin_to_cyrillic(text)
+            else:
+                from utils import convert_cyrillic_to_latin
+                return convert_cyrillic_to_latin(text)
         
-        # XML entities dan oddiy matnga (masalan, &amp; -> &)
-        text = saxutils.unescape(raw_text)
-        
-        original = text
-        if alphabet == "Kirill":
-            text = convert_latin_to_cyrillic(text)
-        else:
-            text = convert_cyrillic_to_latin(text)
-        
-        if text != original:
-            total_replacements += 1
-            
-        # Orqaga XML entities ga (masalan, & -> &amp;)
-        text = saxutils.escape(text)
-        
-        return prefix + text + suffix
-    
-    # <w:t> ... </w:t> yoki <w:t xml:space="preserve"> ... </w:t> ni ushlash
-    pattern = re.compile(r'(<w:t[^>]*>)(.*?)(</w:t>)', flags=re.DOTALL)
-    
-    modified_files = 0
-    for xml_file in xml_files:
-        try:
-            with open(xml_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            new_content = pattern.sub(transliterate_match, content)
-            
-            if new_content != content:
-                with open(xml_file, 'w', encoding='utf-8') as f:
-                    f.write(new_content)
-                modified_files += 1
-        except Exception as e:
-            logging.error(f"XML fayl xatosi ({os.path.basename(xml_file)}): {e}")
-            
-    logging.info(f"process_docx_alphabet: {modified_files} ta fayl o'zgartirildi, {total_replacements} ta matn o'girildi")
-    
-    # Qayta ZIP (docx) ga arxivlash
-    new_docx_path = docx_path + ".new.docx"
-    try:
-        with zipfile.ZipFile(new_docx_path, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
-            for root, dirs, files in os.walk(temp_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, temp_dir)
-                    zip_ref.write(file_path, arcname)
+        # Paragraflarni tahlil qilish
+        for p in doc.paragraphs:
+            for run in p.runs:
+                if run.text:
+                    run.text = process_text(run.text)
                     
-        shutil.move(new_docx_path, docx_path)
-        logging.info(f"process_docx_alphabet muvaffaqiyatli tugadi: {docx_path}")
+        # Jadvallarni tahlil qilish
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for p in cell.paragraphs:
+                        for run in p.runs:
+                            if run.text:
+                                run.text = process_text(run.text)
+                                
+        doc.save(docx_path)
+        logging.info(f"process_docx_alphabet (python-docx) orqali yozuvlar muvaffaqiyatli almashtirildi: {docx_path}")
     except Exception as e:
-        logging.error(f"DOCX qayta saqlashda xato: {e}")
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        logging.error(f"process_docx_alphabet xatosi (Fayl o'zgartirilmadi): {e}")
 
 
 # ==================== RASM YAXSHILASH ====================
