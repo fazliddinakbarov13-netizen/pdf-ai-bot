@@ -381,12 +381,13 @@ async def translate_text(text: str, target_lang: str) -> str:
     )
     
     try:
-        response = await client.aio.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[prompt]
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3
         )
-        if response.text:
-            return response.text.strip()
+        if response.choices and response.choices[0].message.content:
+            return response.choices[0].message.content.strip()
         return text
     except Exception as e:
         logging.error(f"Tarjima xatolik: {e}")
@@ -544,12 +545,13 @@ async def calculate_quality_score(text: str) -> dict:
     )
     
     try:
-        response = await client.aio.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[prompt]
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1
         )
-        if response.text:
-            scores = response.text.strip().replace(" ", "").split(",")
+        if response.choices and response.choices[0].message.content:
+            scores = response.choices[0].message.content.strip().replace(" ", "").split(",")
             if len(scores) >= 3:
                 ocr = min(100, max(0, int(scores[0])))
                 formatting = min(100, max(0, int(scores[1])))
