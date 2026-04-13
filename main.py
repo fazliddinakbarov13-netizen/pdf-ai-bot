@@ -2607,120 +2607,24 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
             import fitz
             output_path = os.path.join(TEMP_DIR, f"{base_name}.docx")
             
-            # Check if PDF is scanned
             doc = fitz.open(file_path)
-            total_text = ""
-            total_image_area = 0
-            total_page_area = 0
-            for i in range(min(5, len(doc))):
-                page = doc[i]
-                total_text += page.get_text()
-                total_page_area += page.rect.width * page.rect.height
-                for img in page.get_images():
-                    try:
-                        bbox = page.get_image_bbox(img)
-                        total_image_area += bbox.width * bbox.height
-                    except Exception:
-                        pass
+            logger.info(f"PDF ochildi: {len(doc)} sahifa, alphabet={selected_alphabet}")
             
-            text_len = len(total_text.strip())
-            image_ratio = total_image_area / total_page_area if total_page_area > 0 else 0
-            is_scanned = text_len < 50 or image_ratio > 0.60
-            logger.info(f"PDF tahlil: text_len={text_len}, image_ratio={image_ratio:.2f}, is_scanned={is_scanned}")
-            
-            if is_scanned:
-                try:
-                    await status_msg.edit_text(
-                        f"{direction_emoji} <b>{direction_label}</b>\n\n"
-                        f"🔍 <i>Skanerlangan PDF aniqlandi. AI orqali matn o'qilmoqda (OCR)...</i>\n"
-                        f"▓▓▓░░░░░░░ 30%",
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
-                
-                texts = []
-                for i in range(len(doc)):
-                    if i >= 30: break # Max 30 pages
-                    page = doc[i]
-                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-                    img_path = os.path.join(TEMP_DIR, f"pdf_img_{user_id}_{base_name}_{i}.jpg")
-                    pix.save(img_path)
-                    try:
-                        txt, _ = await process_image_async(img_path, selected_alphabet)
-                        if txt and len(txt.strip()) >= 3:
-                            texts.append(txt)
-                    except Exception as e:
-                        logger.warning(f"PDF OCR xatosi (sahifa {i+1}): {e}")
-                    finally:
-                        try:
-                            _cleanup_file(img_path)
-                        except:
-                            pass
+            if selected_alphabet == "Original":
+                # O'zgartirmasdan — pdf2docx bilan formatni saqlab konvertatsiya
                 doc.close()
                 
-                combined_text = "\n\n".join(texts)
-                if not combined_text.strip():
-                    raise Exception("PDF dan matn o'qib bo'lmadi.")
-                
-                # OCR dan chiqgan matnni kerakli alifboga o'girish
-                if selected_alphabet == "Lotin":
-                    from utils import detect_script, convert_cyrillic_to_latin
-                    if detect_script(combined_text) == "kirill":
-                        combined_text = convert_cyrillic_to_latin(combined_text)
-                        logger.info("OCR: Kirill → Lotin konvertatsiya qilindi")
-                elif selected_alphabet == "Kirill":
-                    from utils import detect_script, convert_latin_to_cyrillic
-                    if detect_script(combined_text) == "lotin":
-                        combined_text = convert_latin_to_cyrillic(combined_text)
-                        logger.info("OCR: Lotin → Kirill konvertatsiya qilindi")
-                
-                try:
-                    await status_msg.edit_text(
-                        f"{direction_emoji} <b>{direction_label}</b>\n\n"
-                        f"📝 <i>Word hujjat yaratilmoqda...</i>\n"
-                        f"▓▓▓▓▓▓░░░░ 60%",
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
-                
-                await asyncio.to_thread(create_word_document, combined_text, output_path, None)
-                
-            else:
-                doc.close()
-                # === PDF → Word (pdf2docx + alifbo konvertatsiya) ===
-                def _convert_pdf_to_word(pdf_path, docx_path, alphabet):
+                def _convert_pdf_to_word_original(pdf_path, docx_path):
                     try:
                         from pdf2docx import Converter
                         cv = Converter(pdf_path)
                         cv.convert(docx_path)
                         cv.close()
-                        logger.info(f"pdf2docx muvaffaqiyatli: {docx_path}")
                     except ImportError:
                         import subprocess, sys
-                        logger.info("pdf2docx topilmadi, o'rnatilmoqda...")
-                        try:
-                            subprocess.run([sys.executable, "-m", "pip", "install", "pdf2docx", "python-docx", "PyMuPDF"], check=True)
-                        except Exception as e:
-                            logger.error(f"Pip xatosi (pdf2docx): {e}")
-                        
-                        logger.info("Alohida jarayonda pdf2docx ishga tushirilmoqda...")
+                        subprocess.run([sys.executable, "-m", "pip", "install", "pdf2docx"], check=True)
                         code = f"from pdf2docx import Converter\ncv = Converter(r'{pdf_path}')\ncv.convert(r'{docx_path}')\ncv.close()"
-                        try:
-                            subprocess.run([sys.executable, "-c", code], check=True)
-                        except subprocess.CalledProcessError as e:
-                            raise Exception(f"Alohida jarayonda pdf2docx xatosi: {e}")
-                    
-                    # Agar alifbo konvertatsiya kerak bo'lsa
-                    if alphabet in ("Lotin", "Kirill"):
-                        try:
-                            from utils import process_docx_alphabet
-                            logger.info(f"process_docx_alphabet boshlanmoqda: alphabet={alphabet}")
-                            process_docx_alphabet(docx_path, alphabet)
-                            logger.info(f"process_docx_alphabet muvaffaqiyatli tugadi")
-                        except Exception as e:
-                            logger.error(f"process_docx_alphabet xato: {e}", exc_info=True)
+                        subprocess.run([sys.executable, "-c", code], check=True)
                 
                 try:
                     await status_msg.edit_text(
@@ -2732,21 +2636,96 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                 except Exception:
                     pass
                 
-                await asyncio.to_thread(_convert_pdf_to_word, file_path, output_path, selected_alphabet)
-            
-            # === YAKUNIY TEKSHIRISH: Word fayl ichidagi matn to'g'ri alifbodami? ===
-            if selected_alphabet in ("Lotin", "Kirill") and os.path.exists(output_path):
+                await asyncio.to_thread(_convert_pdf_to_word_original, file_path, output_path)
+                
+            else:
+                # Lotin yoki Kirill — matnni to'g'ridan-to'g'ri chiqarib, o'girib, yangi Word yaratish
+                
+                # 1-qadam: PDF dan matn olish (PyMuPDF)
+                all_pages_text = []
+                total_text_check = ""
+                for i in range(min(5, len(doc))):
+                    total_text_check += doc[i].get_text()
+                
+                is_scanned = len(total_text_check.strip()) < 50
+                logger.info(f"PDF tahlil: text_len={len(total_text_check.strip())}, is_scanned={is_scanned}")
+                
+                if is_scanned:
+                    # Skanerlangan PDF — AI OCR
+                    try:
+                        await status_msg.edit_text(
+                            f"{direction_emoji} <b>{direction_label}</b>\n\n"
+                            f"🔍 <i>Skanerlangan PDF. AI orqali matn o'qilmoqda...</i>\n"
+                            f"▓▓▓░░░░░░░ 30%",
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+                    
+                    for i in range(len(doc)):
+                        if i >= 30: break
+                        page = doc[i]
+                        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                        img_path = os.path.join(TEMP_DIR, f"pdf_img_{user_id}_{base_name}_{i}.jpg")
+                        pix.save(img_path)
+                        try:
+                            txt, _ = await process_image_async(img_path, selected_alphabet)
+                            if txt and len(txt.strip()) >= 3:
+                                all_pages_text.append(txt)
+                        except Exception as e:
+                            logger.warning(f"PDF OCR xatosi (sahifa {i+1}): {e}")
+                        finally:
+                            _cleanup_file(img_path)
+                else:
+                    # Oddiy PDF — PyMuPDF bilan matn chiqarish
+                    try:
+                        await status_msg.edit_text(
+                            f"{direction_emoji} <b>{direction_label}</b>\n\n"
+                            f"📝 <i>PDF dan matn o'qilmoqda...</i>\n"
+                            f"▓▓▓▓░░░░░░ 40%",
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+                    
+                    for i in range(len(doc)):
+                        page_text = doc[i].get_text()
+                        if page_text and page_text.strip():
+                            all_pages_text.append(page_text.strip())
+                
+                doc.close()
+                
+                combined_text = "\n\n".join(all_pages_text)
+                if not combined_text.strip():
+                    raise Exception("PDF dan matn o'qib bo'lmadi.")
+                
+                # 2-qadam: Alifboni o'girish
+                logger.info(f"Matn uzunligi: {len(combined_text)}, alifbo: {selected_alphabet}")
+                
+                if selected_alphabet == "Lotin":
+                    combined_text = convert_cyrillic_to_latin(combined_text)
+                    logger.info("Kirill → Lotin konvertatsiya qilindi")
+                elif selected_alphabet == "Kirill":
+                    combined_text = convert_latin_to_cyrillic(combined_text)
+                    logger.info("Lotin → Kirill konvertatsiya qilindi")
+                
+                # 3-qadam: Word hujjat yaratish
                 try:
-                    from utils import process_docx_alphabet
-                    logger.info(f"Yakuniy alifbo tekshirish va tuzatish: {selected_alphabet}")
-                    process_docx_alphabet(output_path, selected_alphabet)
-                    logger.info("Yakuniy alifbo konvertatsiya muvaffaqiyatli")
-                except Exception as e:
-                    logger.error(f"Yakuniy alifbo konvertatsiya xato: {e}", exc_info=True)
+                    await status_msg.edit_text(
+                        f"{direction_emoji} <b>{direction_label}</b>\n\n"
+                        f"📝 <i>Word hujjat yaratilmoqda...</i>\n"
+                        f"▓▓▓▓▓▓▓░░░ 70%",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+                
+                await asyncio.to_thread(create_word_document, combined_text, output_path, None)
+                logger.info(f"Word hujjat yaratildi: {output_path}")
             
             out_filename = os.path.splitext(original_name)[0] + ".docx"
             doc_file = FSInputFile(output_path, filename=out_filename)
-            word_count = 0
+            word_count = len(combined_text.split()) if 'combined_text' in dir() else 0
             
         else:
             # === Word → PDF (docx2pdf — Word dasturi orqali to'liq konvertatsiya) ===
