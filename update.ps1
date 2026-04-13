@@ -15,7 +15,7 @@ if (-Not (Test-Path $pythonCmd)) {
     $pythonCmd = "python"
 }
 
-& $pythonCmd -m pip install pdf2docx python-docx PyMuPDF aiohttp pillow python-dotenv google-genai aiogram SpeechRecognition pydub 2>$null
+& $pythonCmd -m pip install pdf2docx python-docx PyMuPDF pytesseract aiohttp pillow python-dotenv google-genai aiogram SpeechRecognition pydub 2>$null
 
 # ffmpeg o'rnatish (SpeechRecognition uchun kerak)
 if (-Not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {

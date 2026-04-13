@@ -601,3 +601,62 @@ async def calculate_quality_score(text: str) -> dict:
     
     return {"ocr": 0, "formatting": 0, "grammar": 0, "overall": 0}
 
+import os
+import fitz
+import pytesseract
+from docx import Document
+
+# Tesseract executable path on VPS
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
+def extract_text_via_tesseract(pdf_path: str, docx_path: str, alphabet: str):
+    """
+    Skanerlangan PDF fayldan rasmlarni kesib olib, Tesseract yordamida o'qiydi 
+    va transliteratsiya qilib Word (docx) fayliga joylaydi.
+    """
+    doc = fitz.open(pdf_path)
+    word_doc = Document()
+    
+    # Tillarni sozlash
+    tess_lang = 'rus+uzb_cyrl+eng'  # Default for Kirill
+    if alphabet == 'Lotin':
+        tess_lang = 'uzb+eng'
+        
+    for page_num in range(len(doc)):
+        page = doc[page_num]
+        pix = page.get_pixmap(dpi=300)
+        temp_img = f"temp_tess_page_{page_num}.png"
+        pix.save(temp_img)
+        
+        try:
+            # Rasm ustida OCR
+            text = pytesseract.image_to_string(temp_img, lang=tess_lang)
+            text = text.strip()
+            
+            # Agar text topilmasa, tashlab o'tamiz
+            if text:
+                # Transliteratsiya
+                if alphabet == 'Lotin':
+                    text = convert_cyrillic_to_latin(text)
+                elif alphabet == 'Kirill':
+                    text = convert_latin_to_cyrillic(text)
+                
+                # Word ga qo'shish
+                for para in text.split('\n'):
+                    if para.strip():
+                        word_doc.add_paragraph(para.strip())
+                
+                # Yangi sahifa
+                if page_num < len(doc) - 1:
+                    word_doc.add_page_break()
+                    
+        except Exception as e:
+            logging.error(f"OCR Error on page {page_num}: {e}")
+        finally:
+            if os.path.exists(temp_img):
+                os.remove(temp_img)
+                
+    # Faylni saqlash
+    word_doc.save(docx_path)
+    doc.close()
+

@@ -2610,6 +2610,14 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
             doc = fitz.open(file_path)
             logger.info(f"PDF ochildi: {len(doc)} sahifa, alphabet={selected_alphabet}")
             
+            text_len = 0
+            for page in doc:
+                text_len += len(page.get_text().strip())
+                if text_len > 50:
+                    break
+            
+            is_scanned = (text_len < 50)
+            
             if selected_alphabet == "Original":
                 # O'zgartirmasdan — pdf2docx bilan formatni saqlab konvertatsiya
                 doc.close()
@@ -2639,32 +2647,35 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                 await asyncio.to_thread(_convert_pdf_to_word_original, file_path, output_path)
                 
             else:
-                # Lotin yoki Kirill — pdf2docx + process_docx_alphabet
+                # Lotin yoki Kirill so'raldi
                 doc.close()
                 
-                def _convert_and_transliterate(pdf_path, docx_path, alphabet):
-                    """pdf2docx bilan konvertatsiya, keyin alifbo o'girish."""
-                    # 1-qadam: pdf2docx bilan Word yaratish
-                    try:
-                        from pdf2docx import Converter
-                        cv = Converter(pdf_path)
-                        cv.convert(docx_path)
-                        cv.close()
-                        logger.info(f"pdf2docx muvaffaqiyatli: {docx_path}")
-                    except Exception as e:
-                        logger.error(f"pdf2docx xato: {e}")
-                        # Fallback: subprocess bilan sinash
-                        import subprocess, sys
+                def _convert_and_transliterate(pdf_path, docx_path, alphabet, scanned):
+                    if scanned:
+                        logging.info("Skanerlangan PDF aniqlandi. Tesseract ishga tushiriladi...")
+                        from utils import extract_text_via_tesseract
+                        extract_text_via_tesseract(pdf_path, docx_path, alphabet)
+                        logging.info("Tesseract muvaffaqiyatli yakunlandi.")
+                    else:
+                        # 1-qadam: pdf2docx bilan Word yaratish
                         try:
-                            code = f"from pdf2docx import Converter\ncv = Converter(r'{pdf_path}')\ncv.convert(r'{docx_path}')\ncv.close()"
-                            subprocess.run([sys.executable, "-c", code], check=True, timeout=120)
-                            logger.info("pdf2docx subprocess muvaffaqiyatli")
-                        except Exception as e2:
-                            logger.error(f"pdf2docx subprocess xato: {e2}")
-                            raise Exception(f"PDF konvertatsiya xatosi: {e2}")
-                    
-                    # 2-qadam: Alifbo konvertatsiya (DOCX ichidagi barcha matnni o'girish)
-                    if alphabet in ("Lotin", "Kirill"):
+                            from pdf2docx import Converter
+                            cv = Converter(pdf_path)
+                            cv.convert(docx_path)
+                            cv.close()
+                            logger.info(f"pdf2docx muvaffaqiyatli: {docx_path}")
+                        except Exception as e:
+                            logger.error(f"pdf2docx xato: {e}")
+                            import subprocess, sys
+                            try:
+                                code = f"from pdf2docx import Converter\ncv = Converter(r'{pdf_path}')\ncv.convert(r'{docx_path}')\ncv.close()"
+                                subprocess.run([sys.executable, "-c", code], check=True, timeout=120)
+                                logger.info("pdf2docx subprocess muvaffaqiyatli")
+                            except Exception as e2:
+                                logger.error(f"pdf2docx subprocess xato: {e2}")
+                                raise Exception(f"PDF konvertatsiya xatosi: {e2}")
+                        
+                        # 2-qadam: Alifbo konvertatsiya (DOCX ichidagi barcha matnni o'girish)
                         try:
                             from utils import process_docx_alphabet
                             logger.info(f"process_docx_alphabet boshlandi: {alphabet}")
@@ -2683,7 +2694,7 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                 except Exception:
                     pass
                 
-                await asyncio.to_thread(_convert_and_transliterate, file_path, output_path, selected_alphabet)
+                await asyncio.to_thread(_convert_and_transliterate, file_path, output_path, selected_alphabet, is_scanned)
                 logger.info(f"PDF→Word+alifbo muvaffaqiyatli: {output_path}")
             
             out_filename = os.path.splitext(original_name)[0] + ".docx"
