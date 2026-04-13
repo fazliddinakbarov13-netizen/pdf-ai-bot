@@ -119,8 +119,7 @@ def get_main_menu_keyboard(is_admin=False):
         [InlineKeyboardButton(text="📄 PDF → Word", callback_data="mode_pdf_to_word"),
          InlineKeyboardButton(text="📝 Word → PDF", callback_data="mode_word_to_pdf")],
         [InlineKeyboardButton(text="🌐 Rasmni tarjima + hujjat", callback_data="mode_translate")],
-        [InlineKeyboardButton(text="🔤 Lotin ↔ Kirill", callback_data="mode_convert"),
-         InlineKeyboardButton(text="🎤 Ovoz", callback_data="mode_voice")],
+        [InlineKeyboardButton(text="🔤 Lotin ↔ Kirill", callback_data="mode_convert")],
         [InlineKeyboardButton(text="⚙️ Hisobim & Yordam", callback_data="account_help_menu")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -131,8 +130,11 @@ def get_account_help_keyboard(is_admin=False):
          InlineKeyboardButton(text="❓ Yordam", callback_data="help_menu")]
     ]
     if is_admin:
-        # Reyting faqat adminga ko'rinadi
-        keyboard.append([InlineKeyboardButton(text="🏆 Reyting", callback_data="leaderboard")])
+        # Reyting va Admin panel faqat adminga ko'rinadi
+        keyboard.append([
+            InlineKeyboardButton(text="👑 Admin Panel", callback_data="admin_panel"),
+            InlineKeyboardButton(text="🏆 Reyting", callback_data="leaderboard")
+        ])
     keyboard.append([InlineKeyboardButton(text="◀️ Orqaga", callback_data="main_menu")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -2007,18 +2009,10 @@ async def _send_account_info(message: types.Message, user_id: int = None):
 
 @dp.callback_query(F.data == "mode_voice")
 async def mode_voice(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text(
-        "🎤 <b>Ovoz → Hujjat</b>\n\n"
-        "Ovozli xabar yuboring — AI matnni ajratib,\n"
-        "PDF hujjat qilib beradi!\n\n"
-        "🎙️ <i>Ovozli xabar yuboring:</i>",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data="main_menu")],
-        ]),
-        parse_mode="HTML"
+    await callback.answer(
+        "⏳ Ovoz orqali hujjat yaratish xizmati tez orada ishga tushadi!",
+        show_alert=True
     )
-    await state.set_state(DocState.voice_select_alphabet)
-    await callback.answer()
 
 
 @dp.message(DocState.voice_select_alphabet, F.voice)
@@ -2351,6 +2345,11 @@ async def smart_clipboard_handler(message: types.Message, state: FSMContext):
 
 
 # ==================== ADMIN ====================
+
+@dp.callback_query(F.data == "admin_panel")
+async def admin_panel_callback(callback: CallbackQuery):
+    await admin_panel(callback.message)
+    await callback.answer()
 
 @dp.message(Command("admin"), StateFilter("*"))
 async def admin_panel(message: types.Message):
