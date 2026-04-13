@@ -2622,26 +2622,186 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
             # PyMuPDF + python-docx = format (bold, markazlash, shrift) saqlaydi
             
             if is_scanned:
-                # Skanerlangan PDF — Tesseract OCR bilan
+                # Skanerlangan PDF — Gemini AI OCR bilan (format saqlanadi!)
                 doc.close()
                 
-                def _convert_scanned(pdf_path, docx_path, alphabet):
-                    logging.info("Skanerlangan PDF aniqlandi. Tesseract ishga tushiriladi...")
-                    from utils import extract_text_via_tesseract
-                    extract_text_via_tesseract(pdf_path, docx_path, alphabet)
-                    logging.info("Tesseract muvaffaqiyatli yakunlandi.")
+                async def _convert_scanned_ai(pdf_path, docx_path, alphabet):
+                    """Skanerlangan PDF: har sahifani rasm → Gemini AI OCR → Word."""
+                    import fitz
+                    from docx import Document as DocxDocument
+                    from docx.shared import Pt, Cm
+                    from docx.enum.text import WD_ALIGN_PARAGRAPH
+                    from PIL import Image
+                    import io as _io
+                    
+                    pdf = fitz.open(pdf_path)
+                    word_doc = DocxDocument()
+                    
+                    for section in word_doc.sections:
+                        section.top_margin = Cm(2)
+                        section.bottom_margin = Cm(2)
+                        section.left_margin = Cm(2.5)
+                        section.right_margin = Cm(2.5)
+                    
+                    alphabet_label = "O'zbek Latin (Lotin)" if alphabet == "Lotin" else (
+                        "O'zbek Cyrillic (Kirill)" if alphabet == "Kirill" else "Original"
+                    )
+                    
+                    for page_num in range(len(pdf)):
+                        page = pdf[page_num]
+                        pix = page.get_pixmap(dpi=250)
+                        img_data = pix.tobytes("png")
+                        pil_img = Image.open(_io.BytesIO(img_data))
+                        if pil_img.mode != 'RGB':
+                            pil_img = pil_img.convert('RGB')
+                        
+                        try:
+                            await status_msg.edit_text(
+                                f"{direction_emoji} <b>{direction_label}</b>\n\n"
+                                f"🔍 <i>AI OCR: {page_num+1}/{len(pdf)} sahifa o'qilmoqda...</i>\n"
+                                f"▓▓{'▓' * (page_num * 8 // max(1,len(pdf)))}{'░' * (8 - page_num * 8 // max(1,len(pdf)))} "
+                                f"{(page_num+1)*100//len(pdf)}%",
+                                parse_mode="HTML"
+                            )
+                        except Exception:
+                            pass
+                        
+                        # Gemini AI bilan OCR
+                        ocr_prompt = f"""You are an expert document OCR system. Extract ALL text from this document image.
+
+OUTPUT FORMAT RULES:
+1. If a line is CENTERED, put [CENTER] before it on its own line.
+2. If text is BOLD, wrap it in [BOLD]...[/BOLD].
+3. Each real paragraph = one continuous block. Separate paragraphs with empty line.
+4. If a paragraph has first-line indentation, put [INDENT] before it.
+5. Keep dash/bullet list items (- item) each on their own line.
+6. Do NOT add commentary or explanations.
+7. Extract EVERY word — do not skip anything.
+
+ALPHABET: Output MUST be in {alphabet_label}.
+
+Return ONLY the extracted text with formatting tags."""
+                        
+                        try:
+                            response = await client.aio.models.generate_content(
+                                model='gemini-2.5-flash',
+                                contents=[pil_img, ocr_prompt],
+                                config=types.GenerateContentConfig(
+                                    temperature=0.1
+                                )
+                            )
+                            page_text = response.text.strip() if response.text else ""
+                        except Exception as e:
+                            logger.error(f"Gemini OCR xato (sahifa {page_num}): {e}")
+                            page_text = ""
+                        
+                        if not page_text:
+                            continue
+                        
+                        # AI natijasini Word paragraflariga aylantirish
+                        lines = page_text.split('\n')
+                        i = 0
+                        while i < len(lines):
+                            line = lines[i].strip()
+                            
+                            if not line:
+                                i += 1
+                                continue
+                            
+                            # [CENTER] tag
+                            is_center = False
+                            if line == '[CENTER]':
+                                i += 1
+                                if i < len(lines):
+                                    line = lines[i].strip()
+                                is_center = True
+                            elif line.startswith('[CENTER]'):
+                                line = line.replace('[CENTER]', '').strip()
+                                is_center = True
+                            
+                            # [INDENT] tag
+                            has_indent = False
+                            if line.startswith('[INDENT]'):
+                                line = line.replace('[INDENT]', '').strip()
+                                has_indent = True
+                            
+                            # Tire ro'yxat
+                            is_dash = line.startswith('- ') or line.startswith('— ') or line.startswith('– ')
+                            
+                            # Paragraf yaratish
+                            para = word_doc.add_paragraph()
+                            pf = para.paragraph_format
+                            pf.space_before = Pt(2)
+                            pf.space_after = Pt(2)
+                            pf.line_spacing = 1.15
+                            
+                            if is_center:
+                                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            elif is_dash:
+                                para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                                pf.left_indent = Cm(1.0)
+                                pf.first_line_indent = Cm(-0.5)
+                            elif has_indent:
+                                para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                                pf.first_line_indent = Cm(1.25)
+                            else:
+                                para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                            
+                            # [BOLD] taglarni qayta ishlash
+                            remaining = line
+                            while remaining:
+                                bold_start = remaining.find('[BOLD]')
+                                if bold_start == -1:
+                                    # Oddiy matn
+                                    if remaining.strip():
+                                        run = para.add_run(remaining)
+                                        run.font.name = 'Times New Roman'
+                                        run.font.size = Pt(13)
+                                    break
+                                else:
+                                    # Bold dan oldingi oddiy matn
+                                    before = remaining[:bold_start]
+                                    if before.strip():
+                                        run = para.add_run(before)
+                                        run.font.name = 'Times New Roman'
+                                        run.font.size = Pt(13)
+                                    
+                                    # Bold matn
+                                    bold_end = remaining.find('[/BOLD]', bold_start)
+                                    if bold_end == -1:
+                                        bold_text = remaining[bold_start + 6:]
+                                        remaining = ""
+                                    else:
+                                        bold_text = remaining[bold_start + 6:bold_end]
+                                        remaining = remaining[bold_end + 7:]
+                                    
+                                    if bold_text.strip():
+                                        run = para.add_run(bold_text)
+                                        run.bold = True
+                                        run.font.name = 'Times New Roman'
+                                        run.font.size = Pt(13)
+                            
+                            i += 1
+                        
+                        # Sahifa bo'limi
+                        if page_num < len(pdf) - 1:
+                            word_doc.add_page_break()
+                    
+                    word_doc.save(docx_path)
+                    pdf.close()
+                    logger.info(f"Skanerlangan PDF → Word (AI OCR) muvaffaqiyatli: {docx_path}")
                 
                 try:
                     await status_msg.edit_text(
                         f"{direction_emoji} <b>{direction_label}</b>\n\n"
-                        f"🔍 <i>Skanerlangan PDF — OCR bilan o'qilmoqda...</i>\n"
-                        f"▓▓▓▓▓░░░░░ 50%",
+                        f"🤖 <i>AI OCR ishga tushmoqda (format saqlanadi)...</i>\n"
+                        f"▓▓░░░░░░░░ 20%",
                         parse_mode="HTML"
                     )
                 except Exception:
                     pass
                 
-                await asyncio.to_thread(_convert_scanned, file_path, output_path, selected_alphabet)
+                await _convert_scanned_ai(file_path, output_path, selected_alphabet)
             else:
                 # Oddiy matnli PDF — professional konvertor bilan
                 doc.close()
