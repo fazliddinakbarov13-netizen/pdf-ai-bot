@@ -10,16 +10,16 @@ from dotenv import load_dotenv
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
-# Zomro (Germany) serveri uchun Google V1 bloklangan. Shuning uchun proxy ishlatamiz.
-base_url = os.getenv("GEMINI_BASE_URL", "https://gemini.chatxyz.online")
+# GEMINI_BASE_URL faqat .env da bo'lsagina ishlatiladi.
+base_url = os.getenv("GEMINI_BASE_URL")
 
-if base_url:
-    client = genai.Client(api_key=api_key, http_options={'base_url': base_url, 'timeout': 20000})
+if base_url and len(base_url.strip()) > 5:
+    client = genai.Client(api_key=api_key, http_options={'base_url': base_url, 'timeout': 30000})
 else:
-    client = genai.Client(api_key=api_key, http_options={'timeout': 20000})
+    client = genai.Client(api_key=api_key, http_options={'timeout': 30000})
 
-# Ovoz uchun to'g'ridan-to'g'ri API (proxy ba'zan ovozni qo'llab-quvvatlamaydi)
-direct_client = genai.Client(api_key=api_key, http_options={'timeout': 25000})
+# Ovoz va boshqa og'ir zaproslar uchun to'g'ridan-to'g'ri API
+direct_client = genai.Client(api_key=api_key, http_options={'timeout': 30000})
 
 # ==================== OCR PROMPT ====================
 
