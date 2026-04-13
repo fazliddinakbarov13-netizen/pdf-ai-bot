@@ -14,12 +14,12 @@ api_key = os.getenv("GEMINI_API_KEY")
 base_url = os.getenv("GEMINI_BASE_URL")
 
 if base_url and len(base_url.strip()) > 5:
-    client = genai.Client(api_key=api_key, http_options={'base_url': base_url, 'timeout': 30000})
+    client = genai.Client(api_key=api_key, http_options={'base_url': base_url, 'timeout': 30.0})
 else:
-    client = genai.Client(api_key=api_key, http_options={'timeout': 30000})
+    client = genai.Client(api_key=api_key, http_options={'timeout': 30.0})
 
 # Ovoz va boshqa og'ir zaproslar uchun to'g'ridan-to'g'ri API
-direct_client = genai.Client(api_key=api_key, http_options={'timeout': 30000})
+direct_client = genai.Client(api_key=api_key, http_options={'timeout': 60.0})
 
 # ==================== OCR PROMPT ====================
 
