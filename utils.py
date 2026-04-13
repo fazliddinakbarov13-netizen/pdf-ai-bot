@@ -122,6 +122,73 @@ def detect_script(text: str) -> str:
     return "lotin"
 
 
+def process_docx_alphabet(docx_path: str, alphabet: str):
+    """Word fayl ichidagi barcha XML qismlarini xavfsiz o'qib, alifboni transliteratsiya qiladi."""
+    import zipfile
+    import os
+    import tempfile
+    import re
+    import xml.sax.saxutils as saxutils
+    import shutil
+
+    temp_dir = tempfile.mkdtemp()
+    
+    with zipfile.ZipFile(docx_path, 'r') as zip_ref:
+        zip_ref.extractall(temp_dir)
+    
+    xml_files = []
+    for root, dirs, files in os.walk(temp_dir):
+        for file in files:
+            if file.endswith('.xml'):
+                xml_files.append(os.path.join(root, file))
+
+    def transliterate_match(match):
+        prefix = match.group(1)
+        raw_text = match.group(2)
+        suffix = match.group(3)
+        
+        # XML entities dan oddiy matnga (masalan, &amp; -> &)
+        text = saxutils.unescape(raw_text)
+        
+        if alphabet == "Kirill":
+            text = convert_latin_to_cyrillic(text)
+        else:
+            text = convert_cyrillic_to_latin(text)
+            
+        # Orqaga XML entities ga (masalan, & -> &amp;)
+        text = saxutils.escape(text)
+        
+        return prefix + text + suffix
+    
+    # <w:t> ... </w:t> yoki <w:t xml:space="preserve"> ... </w:t> ni ushlash
+    pattern = re.compile(r'(<w:t[^>]*>)(.*?)(</w:t>)', flags=re.DOTALL)
+    
+    for xml_file in xml_files:
+        try:
+            with open(xml_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            new_content = pattern.sub(transliterate_match, content)
+            
+            if new_content != content:
+                with open(xml_file, 'w', encoding='utf-8') as f:
+                    f.write(new_content)
+        except Exception as e:
+            pass
+            
+    # Qayta ZIP (docx) ga arxivlash
+    new_docx_path = docx_path + ".new.docx"
+    with zipfile.ZipFile(new_docx_path, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
+        for root, dirs, files in os.walk(temp_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, temp_dir)
+                zip_ref.write(file_path, arcname)
+                
+    shutil.move(new_docx_path, docx_path)
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 # ==================== RASM YAXSHILASH ====================
 
 def _enhance_image(img: Image.Image) -> Image.Image:

@@ -2487,7 +2487,8 @@ async def receive_pdf_file(message: types.Message, state: FSMContext):
     await state.update_data(convert_file_path=file_path, convert_direction="pdf_to_word", original_filename=doc.file_name)
     await message.answer(
         "✅ PDF fayl qabul qilindi!\n\n"
-        "🔤 Qaysi alifboda chiqarish kerak?",
+        "🔤 Qaysi alifboda chiqarish kerak?\n"
+        "💡 <i>(Agar PDF skanerlangan rasm bo'lsa, bot uni AI orqali yozmaga aylantiradi)</i>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [
                 InlineKeyboardButton(text="🔤 Lotin", callback_data="convabc_Lotin"),
@@ -2608,86 +2609,115 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
         base_name = f"conv_{user_id}_{int(time.time())}"
         
         if is_pdf_to_word:
-            # === PDF → Word (pdf2docx + alifbo konvertatsiya) ===
+            import fitz
             output_path = os.path.join(TEMP_DIR, f"{base_name}.docx")
             
-            def _convert_pdf_to_word(pdf_path, docx_path, alphabet):
+            # Check if PDF is scanned
+            doc = fitz.open(file_path)
+            total_text = ""
+            total_image_area = 0
+            total_page_area = 0
+            for i in range(min(5, len(doc))):
+                page = doc[i]
+                total_text += page.get_text()
+                total_page_area += page.rect.width * page.rect.height
+                for img in page.get_images():
+                    try:
+                        bbox = page.get_image_bbox(img[0])
+                        total_image_area += bbox.width * bbox.height
+                    except:
+                        pass
+            
+            image_ratio = total_image_area / total_page_area if total_page_area > 0 else 0
+            is_scanned = len(total_text.strip()) < 50 or image_ratio > 0.60
+            
+            if is_scanned:
                 try:
-                    from pdf2docx import Converter
-                    cv = Converter(pdf_path)
-                    cv.convert(docx_path)
-                    cv.close()
-                except ImportError:
-                    import subprocess, sys
-                    logger.info("pdf2docx topilmadi, o'rnatilmoqda...")
-                    try:
-                        subprocess.run([sys.executable, "-m", "pip", "install", "pdf2docx", "python-docx", "PyMuPDF"], check=True)
-                    except Exception as e:
-                        logger.error(f"Pip xatosi (pdf2docx): {e}")
-                    
-                    logger.info("Alohida jarayonda pdf2docx ishga tushirilmoqda...")
-                    code = f"from pdf2docx import Converter\ncv = Converter(r'{pdf_path}')\ncv.convert(r'{docx_path}')\ncv.close()"
-                    try:
-                        subprocess.run([sys.executable, "-c", code], check=True)
-                    except subprocess.CalledProcessError as e:
-                        raise Exception(f"Alohida jarayonda pdf2docx xatosi: {e}")
+                    await status_msg.edit_text(
+                        f"{direction_emoji} <b>{direction_label}</b>\n\n"
+                        f"🔍 <i>Skanerlangan PDF aniqlandi. AI orqali matn o'qilmoqda (OCR)...</i>\n"
+                        f"▓▓▓░░░░░░░ 30%",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
                 
-                # Agar alifbo konvertatsiya kerak bo'lsa
-                if alphabet in ("Lotin", "Kirill"):
+                texts = []
+                for i in range(len(doc)):
+                    if i >= 30: break # Max 30 pages
+                    page = doc[i]
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                    img_path = os.path.join(TEMP_DIR, f"pdf_img_{user_id}_{base_name}_{i}.jpg")
+                    pix.save(img_path)
                     try:
-                        from docx import Document as DocxDoc
-                    except ImportError:
-                        import subprocess, sys, importlib
-                        logger.info("python-docx topilmadi, o'rnatilmoqda...")
+                        txt, _ = await process_image_async(img_path, selected_alphabet)
+                        if txt and len(txt.strip()) >= 3:
+                            texts.append(txt)
+                    except Exception as e:
+                        logger.warning(f"PDF OCR xatosi (sahifa {i+1}): {e}")
+                    finally:
                         try:
-                            subprocess.run([sys.executable, "-m", "pip", "install", "python-docx"], check=True)
-                        except Exception as e:
-                            logger.error(f"Pip xatosi (python-docx): {e}")
-                        
-                        importlib.invalidate_caches()
-                        try:
-                            import site
-                            importlib.reload(site)
-                        except Exception:
+                            _cleanup_file(img_path)
+                        except:
                             pass
-                            
-                        from docx import Document as DocxDoc
-                    doc = DocxDoc(docx_path)
+                doc.close()
+                
+                combined_text = "\n\n".join(texts)
+                if not combined_text.strip():
+                    raise Exception("PDF dan matn o'qib bo'lmadi.")
+                
+                try:
+                    await status_msg.edit_text(
+                        f"{direction_emoji} <b>{direction_label}</b>\n\n"
+                        f"📝 <i>Word hujjat yaratilmoqda...</i>\n"
+                        f"▓▓▓▓▓▓░░░░ 60%",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+                
+                await asyncio.to_thread(create_word_document, combined_text, output_path, None)
+                
+            else:
+                doc.close()
+                # === PDF → Word (pdf2docx + alifbo konvertatsiya) ===
+                def _convert_pdf_to_word(pdf_path, docx_path, alphabet):
+                    try:
+                        from pdf2docx import Converter
+                        cv = Converter(pdf_path)
+                        cv.convert(docx_path)
+                        cv.close()
+                    except ImportError:
+                        import subprocess, sys
+                        logger.info("pdf2docx topilmadi, o'rnatilmoqda...")
+                        try:
+                            subprocess.run([sys.executable, "-m", "pip", "install", "pdf2docx", "python-docx", "PyMuPDF"], check=True)
+                        except Exception as e:
+                            logger.error(f"Pip xatosi (pdf2docx): {e}")
+                        
+                        logger.info("Alohida jarayonda pdf2docx ishga tushirilmoqda...")
+                        code = f"from pdf2docx import Converter\ncv = Converter(r'{pdf_path}')\ncv.convert(r'{docx_path}')\ncv.close()"
+                        try:
+                            subprocess.run([sys.executable, "-c", code], check=True)
+                        except subprocess.CalledProcessError as e:
+                            raise Exception(f"Alohida jarayonda pdf2docx xatosi: {e}")
                     
-                    # Barcha paragraflar ichidagi run larni konvertatsiya
-                    for para in doc.paragraphs:
-                        for run in para.runs:
-                            if run.text and run.text.strip():
-                                if alphabet == "Kirill":
-                                    run.text = convert_latin_to_cyrillic(run.text)
-                                else:
-                                    run.text = convert_cyrillic_to_latin(run.text)
-                    
-                    # Jadvallar ichidagi matnni ham konvertatsiya
-                    for table in doc.tables:
-                        for row in table.rows:
-                            for cell in row.cells:
-                                for para in cell.paragraphs:
-                                    for run in para.runs:
-                                        if run.text and run.text.strip():
-                                            if alphabet == "Kirill":
-                                                run.text = convert_latin_to_cyrillic(run.text)
-                                            else:
-                                                run.text = convert_cyrillic_to_latin(run.text)
-                    
-                    doc.save(docx_path)
-            
-            try:
-                await status_msg.edit_text(
-                    f"{direction_emoji} <b>{direction_label}</b>\n\n"
-                    f"📝 <i>PDF formatini Word ga o'tkazilmoqda...</i>\n"
-                    f"▓▓▓▓▓▓░░░░ 60%",
-                    parse_mode="HTML"
-                )
-            except Exception:
-                pass
-            
-            await asyncio.to_thread(_convert_pdf_to_word, file_path, output_path, selected_alphabet)
+                    # Agar alifbo konvertatsiya kerak bo'lsa
+                    if alphabet in ("Lotin", "Kirill"):
+                        from utils import process_docx_alphabet
+                        process_docx_alphabet(docx_path, alphabet)
+                
+                try:
+                    await status_msg.edit_text(
+                        f"{direction_emoji} <b>{direction_label}</b>\n\n"
+                        f"📝 <i>PDF formatini Word ga o'tkazilmoqda...</i>\n"
+                        f"▓▓▓▓▓▓░░░░ 60%",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+                
+                await asyncio.to_thread(_convert_pdf_to_word, file_path, output_path, selected_alphabet)
             
             out_filename = os.path.splitext(original_name)[0] + ".docx"
             doc_file = FSInputFile(output_path, filename=out_filename)
@@ -2699,46 +2729,8 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
             def _convert_word_to_pdf(docx_path, pdf_path, alphabet):
                 # Agar alifbo konvertatsiya kerak — avval Word faylni o'zgartirish
                 if alphabet in ("Lotin", "Kirill"):
-                    try:
-                        from docx import Document as DocxDoc
-                    except ImportError:
-                        import subprocess, sys, importlib
-                        logger.info("python-docx topilmadi, o'rnatilmoqda...")
-                        try:
-                            subprocess.run([sys.executable, "-m", "pip", "install", "python-docx"], check=True)
-                        except Exception as e:
-                            logger.error(f"Pip xatosi (python-docx): {e}")
-                        
-                        importlib.invalidate_caches()
-                        try:
-                            import site
-                            importlib.reload(site)
-                        except Exception:
-                            pass
-                            
-                        from docx import Document as DocxDoc
-                    doc = DocxDoc(docx_path)
-                    
-                    for para in doc.paragraphs:
-                        for run in para.runs:
-                            if run.text and run.text.strip():
-                                if alphabet == "Kirill":
-                                    run.text = convert_latin_to_cyrillic(run.text)
-                                else:
-                                    run.text = convert_cyrillic_to_latin(run.text)
-                    
-                    for table in doc.tables:
-                        for row in table.rows:
-                            for cell in row.cells:
-                                for para in cell.paragraphs:
-                                    for run in para.runs:
-                                        if run.text and run.text.strip():
-                                            if alphabet == "Kirill":
-                                                run.text = convert_latin_to_cyrillic(run.text)
-                                            else:
-                                                run.text = convert_cyrillic_to_latin(run.text)
-                    
-                    doc.save(docx_path)
+                    from utils import process_docx_alphabet
+                    process_docx_alphabet(docx_path, alphabet)
                 
                 # LibreOffice orqali PDF ga aylantirish (VPS dagi LibreOffice)
                 # soffice --headless --convert-to pdf file.docx --outdir directory
