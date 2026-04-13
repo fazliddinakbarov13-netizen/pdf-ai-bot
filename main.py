@@ -2633,6 +2633,8 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                     from docx.enum.text import WD_ALIGN_PARAGRAPH
                     from PIL import Image
                     import io as _io
+                    from utils import client
+                    from google.genai import types
                     
                     pdf = fitz.open(pdf_path)
                     word_doc = DocxDocument()
