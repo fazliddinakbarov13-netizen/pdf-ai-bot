@@ -2716,8 +2716,14 @@ If {alphabet_label} is "O'zbek Latin (Lotin)" and the image contains Cyrillic (Ð
                         
                         # AI natijasini Word paragraflariga aylantirish
                         import re
+                        from utils import transliterate_to_latin
+                        
                         page_text = re.sub(r'^```\w*\n', '', page_text)
                         page_text = re.sub(r'\n```$', '', page_text)
+                        
+                        # Agar AI shunga qaramay Cyrillic chiqargan bo'lsa, uni pythonda majburiy Lotin qilamiz
+                        if alphabet == "Lotin":
+                            page_text = transliterate_to_latin(page_text)
                         
                         lines = page_text.split('\n')
                         
@@ -2945,9 +2951,11 @@ If {alphabet_label} is "O'zbek Latin (Lotin)" and the image contains Cyrillic (Ð
                             os.remove(safe_pdf_path)
                 else:
                     # Fallback to docx2pdf for testing locally if LibreOffice doesn't exist
+                    abs_docx = os.path.abspath(docx_path)
+                    abs_pdf = os.path.abspath(pdf_path)
                     try:
                         from docx2pdf import convert as docx2pdf_convert
-                        docx2pdf_convert(docx_path, pdf_path)
+                        docx2pdf_convert(abs_docx, abs_pdf)
                     except ImportError:
                         import subprocess, sys
                         logger.info("docx2pdf topilmadi, o'rnatilmoqda...")
@@ -2957,7 +2965,7 @@ If {alphabet_label} is "O'zbek Latin (Lotin)" and the image contains Cyrillic (Ð
                             logger.error(f"Pip xatosi (docx2pdf): {e}")
                         
                         logger.info("Alohida jarayonda docx2pdf ishga tushirilmoqda...")
-                        code = f"from docx2pdf import convert\nconvert(r'{docx_path}', r'{pdf_path}')"
+                        code = f"from docx2pdf import convert\nconvert(r'{abs_docx}', r'{abs_pdf}')"
                         try:
                             subprocess.run([sys.executable, "-c", code], check=True)
                         except subprocess.CalledProcessError as e:
