@@ -2684,18 +2684,22 @@ ALPHABET: Output MUST be in {alphabet_label}.
 
 Return ONLY the extracted text with formatting tags."""
                         
-                        try:
-                            response = await client.aio.models.generate_content(
-                                model='gemini-2.5-flash',
-                                contents=[pil_img, ocr_prompt],
-                                config=types.GenerateContentConfig(
-                                    temperature=0.1
+                        page_text = ""
+                        for attempt in range(3):
+                            try:
+                                response = await client.aio.models.generate_content(
+                                    model='gemini-2.5-pro',
+                                    contents=[pil_img, ocr_prompt],
+                                    config=types.GenerateContentConfig(
+                                        temperature=0.1
+                                    )
                                 )
-                            )
-                            page_text = response.text.strip() if response.text else ""
-                        except Exception as e:
-                            logger.error(f"Gemini OCR xato (sahifa {page_num}): {e}")
-                            page_text = ""
+                                page_text = response.text.strip() if response.text else ""
+                                if page_text:
+                                    break  # Muvaffaqiyatli o'qildi
+                            except Exception as e:
+                                logger.error(f"Gemini OCR xato (sahifa {page_num}, urinish {attempt+1}): {e}")
+                                await asyncio.sleep(2)
                         
                         if not page_text:
                             continue
