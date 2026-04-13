@@ -240,6 +240,7 @@ def _enhance_image(img: Image.Image) -> Image.Image:
 
 async def process_image_async(image_path: str, alphabet: str) -> tuple:
     import json
+    import base64
     image = await asyncio.to_thread(_open_and_optimize_image, image_path)
     
     prompt = (
@@ -258,26 +259,35 @@ async def process_image_async(image_path: str, alphabet: str) -> tuple:
     )
 
     try:
-        response = await client.aio.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[image, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json"
-            )
+        import io
+        img_byte_arr = io.BytesIO()
+        image.save(img_byte_arr, format='JPEG')
+        base64_image = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
+        
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}",
+                                "detail": "high"
+                            }
+                        }
+                    ]
+                }
+            ],
+            temperature=0.1
         )
         
-        if response.text:
+        if response.choices and response.choices[0].message.content:
             try:
-                # Tozalash: Gemini ko'pincha markdown kod bloklaridan foydalanadi (```json ... ```)
-                raw_json = response.text
-                if raw_json.startswith("```json"):
-                    raw_json = raw_json[7:]
-                if raw_json.startswith("```"):
-                    raw_json = raw_json[3:]
-                if raw_json.endswith("```"):
-                    raw_json = raw_json[:-3]
-                raw_json = raw_json.strip()
-                
+                raw_json = response.choices[0].message.content.strip()
                 data = json.loads(raw_json)
                 text_result = data.get("text", "").strip()
                 diagrams = data.get("diagrams", [])
@@ -294,12 +304,10 @@ async def process_image_async(image_path: str, alphabet: str) -> tuple:
                     if isinstance(box, list) and len(box) == 4:
                         try:
                             ymin, xmin, ymax, xmax = [int(v) for v in box]
-                            # Qat'iy mantiqiy chegara: Diagramma ymin matn ymax'sidan kattaroq bo'lishi shart!
                             text_bottom = int(data.get("text_bottom_y", 0))
                             if text_bottom > 0 and text_bottom < ymax:
                                 ymin = max(ymin, text_bottom + 5) 
                             
-                            # Agresiv tozalash: AIda xato ketsa ham yozuvlari kirmasligini ta'minlash
                             ymin = min(ymin + 65, ymax - 30)
                             ymax = max(ymax - 25, ymin + 20)
                             xmin = min(xmin + 25, xmax - 10)
@@ -311,7 +319,6 @@ async def process_image_async(image_path: str, alphabet: str) -> tuple:
                             right = int(xmax * w / 1000)
                             bottom = int(ymax * h / 1000)
                             
-                            # Faqat yaroqli koordinatalar bo'lsa
                             if right > left and bottom > top:
                                 cropped = image.crop((left, top, right, bottom))
                                 cropped_path = f"{image_path}_crop.jpg"
@@ -325,20 +332,11 @@ async def process_image_async(image_path: str, alphabet: str) -> tuple:
                 
             except Exception as e:
                 logging.error(f"JSON parsing error yoki rasm kesishda xato: {e}")
-                # Hato ketib qolsa, return response.text qilmasdan json textni tozalab olamiz
-                import re
-                fallback_text = response.text
-                if '"text":' in fallback_text:
-                    try:
-                        clean_text = re.search(r'"text":\s*"([^"]+)"', fallback_text).group(1)
-                        return clean_text, None
-                    except:
-                        pass
-                return fallback_text.replace("{", "").replace("}", "").replace("[", "").replace("]", ""), None
+                return raw_json[:3900], None
         else:
-            raise ValueError("Gemini API bo'sh javob qaytardi.")
+            raise ValueError("OpenAI API bo'sh javob qaytardi.")
     except Exception as e:
-        logging.error(f"Gemini API xatolik: {e}")
+        logging.error(f"OpenAI API xatolik: {e}")
         raise
 
 
