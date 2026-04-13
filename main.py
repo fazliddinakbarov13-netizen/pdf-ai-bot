@@ -2789,7 +2789,8 @@ Return ONLY the extracted text with formatting tags."""
                         if page_num < len(pdf) - 1:
                             word_doc.add_page_break()
                     
-                    if len(word_doc.paragraphs) == 0:
+                    total_text_len = sum(len(p.text.strip()) for p in word_doc.paragraphs)
+                    if total_text_len == 0:
                         pdf.close()
                         return False
                         
