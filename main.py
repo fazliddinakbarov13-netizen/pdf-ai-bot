@@ -2667,20 +2667,18 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                             pass
                         
                         # OpenAI gpt-4o-mini bilan OCR
-                        ocr_prompt = f"""You are an expert document OCR system. Extract ALL text from this document image.
+                        ocr_prompt = f"""You are an expert document OCR system. Extract ALL text from this document image perfectly.
 
 OUTPUT FORMAT RULES:
-1. If a line is CENTERED, put [CENTER] before it on its own line.
-2. If text is BOLD, wrap it in [BOLD]...[/BOLD].
-3. Each real paragraph = one continuous block. Separate paragraphs with empty line.
-4. If a paragraph has first-line indentation, put [INDENT] before it.
-5. Keep dash/bullet list items (- item) each on their own line.
-6. Do NOT add commentary or explanations.
-7. Extract EVERY word — do not skip anything.
+1. Wrap horizontally centered text or titles in <center>...</center>.
+2. Wrap bold text in <b>...</b>.
+3. Wrap paragraphs that have a first-line indentation in <indent>...</indent>.
+4. VERY IMPORTANT: A continuous paragraph MUST be on a SINGLE line in your output. Do not break sentences into multiple lines. Use line breaks ONLY for actual new paragraphs or separate lines like titles/lists.
+5. If there are words far apart on the same line (e.g. left and right aligned), preserve the gap using multiple spaces.
+6. Do not wrap the output in markdown code blocks (e.g., no ```html). Return raw text.
+7. Extract EVERY word - do not skip anything.
 
-ALPHABET: Output MUST be in {alphabet_label}.
-
-Return ONLY the extracted text with formatting tags."""
+ALPHABET: Output MUST be in {alphabet_label}."""
                         
                         page_text = ""
                         for attempt in range(3):
@@ -2715,33 +2713,34 @@ Return ONLY the extracted text with formatting tags."""
                             continue
                         
                         # AI natijasini Word paragraflariga aylantirish
+                        import re
+                        page_text = re.sub(r'^```\w*\n', '', page_text)
+                        page_text = re.sub(r'\n```$', '', page_text)
+                        
                         lines = page_text.split('\n')
-                        i = 0
-                        while i < len(lines):
-                            line = lines[i].strip()
-                            
+                        
+                        for line in lines:
+                            line = line.strip()
                             if not line:
-                                i += 1
                                 continue
-                            
-                            # [CENTER] tag
+                                
                             is_center = False
-                            if line == '[CENTER]':
-                                i += 1
-                                if i < len(lines):
-                                    line = lines[i].strip()
-                                is_center = True
-                            elif line.startswith('[CENTER]'):
-                                line = line.replace('[CENTER]', '').strip()
-                                is_center = True
+                            is_indent = False
                             
-                            # [INDENT] tag
-                            has_indent = False
-                            if line.startswith('[INDENT]'):
-                                line = line.replace('[INDENT]', '').strip()
-                                has_indent = True
+                            # Cleanup center tags
+                            if '<center>' in line or '</center>' in line:
+                                is_center = True
+                                line = line.replace('<center>', '').replace('</center>', '')
                             
-                            # Tire ro'yxat
+                            # Cleanup indent tags
+                            if '<indent>' in line or '</indent>' in line:
+                                is_indent = True
+                                line = line.replace('<indent>', '').replace('</indent>', '')
+                                
+                            line = line.strip()
+                            if not line:
+                                continue
+                                
                             is_dash = line.startswith('- ') or line.startswith('— ') or line.startswith('– ')
                             
                             # Paragraf yaratish
@@ -2757,47 +2756,42 @@ Return ONLY the extracted text with formatting tags."""
                                 para.alignment = WD_ALIGN_PARAGRAPH.LEFT
                                 pf.left_indent = Cm(1.0)
                                 pf.first_line_indent = Cm(-0.5)
-                            elif has_indent:
+                            elif is_indent:
                                 para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                                 pf.first_line_indent = Cm(1.25)
                             else:
                                 para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-                            
-                            # [BOLD] taglarni qayta ishlash
+                                
+                            # Process <b> tags in the line
                             remaining = line
                             while remaining:
-                                bold_start = remaining.find('[BOLD]')
+                                bold_start = remaining.find('<b>')
                                 if bold_start == -1:
-                                    # Oddiy matn
-                                    if remaining.strip():
+                                    if remaining:
                                         run = para.add_run(remaining)
                                         run.font.name = 'Times New Roman'
                                         run.font.size = Pt(13)
                                     break
+                                
+                                before = remaining[:bold_start]
+                                if before:
+                                    run = para.add_run(before)
+                                    run.font.name = 'Times New Roman'
+                                    run.font.size = Pt(13)
+                                    
+                                bold_end = remaining.find('</b>', bold_start)
+                                if bold_end == -1:
+                                    bold_text = remaining[bold_start+3:]
+                                    remaining = ""
                                 else:
-                                    # Bold dan oldingi oddiy matn
-                                    before = remaining[:bold_start]
-                                    if before.strip():
-                                        run = para.add_run(before)
-                                        run.font.name = 'Times New Roman'
-                                        run.font.size = Pt(13)
+                                    bold_text = remaining[bold_start+3:bold_end]
+                                    remaining = remaining[bold_end+4:]
                                     
-                                    # Bold matn
-                                    bold_end = remaining.find('[/BOLD]', bold_start)
-                                    if bold_end == -1:
-                                        bold_text = remaining[bold_start + 6:]
-                                        remaining = ""
-                                    else:
-                                        bold_text = remaining[bold_start + 6:bold_end]
-                                        remaining = remaining[bold_end + 7:]
-                                    
-                                    if bold_text.strip():
-                                        run = para.add_run(bold_text)
-                                        run.bold = True
-                                        run.font.name = 'Times New Roman'
-                                        run.font.size = Pt(13)
-                            
-                            i += 1
+                                if bold_text:
+                                    run = para.add_run(bold_text)
+                                    run.bold = True
+                                    run.font.name = 'Times New Roman'
+                                    run.font.size = Pt(13)
                         
                         # Sahifa bo'limi
                         if page_num < len(pdf) - 1:
