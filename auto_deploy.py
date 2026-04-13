@@ -8,17 +8,8 @@ def main():
     print("Botni ekranda ochiq holda ishga tushirish skripti...")
     print("Iltimos tegmang...")
     
-    # RDP ulanishini avtomatik ochish
-    print("Server ochiqligini tekshirish yoxud ochilishini kutish...")
-    import subprocess
-    try:
-        subprocess.Popen(["mstsc.exe", "server_connect.rdp"])
-    except FileNotFoundError:
-        pass
-    
-    time.sleep(15) # RDP to'liq ochilishi va ko'pik chiqishiga vaqt berish
-
     # RDP ochiq ekanini tekshirish
+    print("Server ekranini qidirish...")    # RDP ochiq ekanini tekshirish
     try:
         active_window = gw.getActiveWindow()
         if active_window and ("188.137" in active_window.title or "remote desktop" in active_window.title.lower() or "удален" in active_window.title.lower()):
