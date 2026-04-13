@@ -660,3 +660,149 @@ def extract_text_via_tesseract(pdf_path: str, docx_path: str, alphabet: str):
     word_doc.save(docx_path)
     doc.close()
 
+
+def convert_pdf_to_word_formatted(pdf_path: str, docx_path: str, alphabet: str = "Original"):
+    """
+    Professional PDF → Word konvertor.
+    PyMuPDF dan formatlash ma'lumotlarini (bold, markazlash, shrift o'lchami, abzats) 
+    olib, python-docx yordamida Word fayl yaratadi.
+    
+    Bu pdf2docx va LibreOffice ga qaraganda ANCHA yaxshi format saqlaydi.
+    """
+    from docx import Document
+    from docx.shared import Pt, Cm, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    import fitz
+    
+    pdf_doc = fitz.open(pdf_path)
+    word_doc = Document()
+    
+    # Word hujjat sozlamalari — sahifa marginlari
+    for section in word_doc.sections:
+        section.top_margin = Cm(2)
+        section.bottom_margin = Cm(2)
+        section.left_margin = Cm(2.5)
+        section.right_margin = Cm(2.5)
+    
+    logging.info(f"PDF→Word formatted: {len(pdf_doc)} sahifa, alphabet={alphabet}")
+    
+    for page_num in range(len(pdf_doc)):
+        page = pdf_doc[page_num]
+        page_width = page.rect.width
+        page_left_margin = page_width * 0.08   # taxminan 8% chapdan
+        page_right_margin = page_width * 0.92  # taxminan 92% o'ngdan
+        page_center = page_width / 2
+        content_width = page_right_margin - page_left_margin
+        
+        # Sahifa bo'ylab text bloklarini olish
+        blocks = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)["blocks"]
+        
+        # Faqat matnli bloklarni olish (rasm bloklarini tashlab ketish)
+        text_blocks = [b for b in blocks if b["type"] == 0]
+        
+        # Bloklarni yuqoridan pastga saralash
+        text_blocks.sort(key=lambda b: (b["bbox"][1], b["bbox"][0]))
+        
+        for block in text_blocks:
+            block_lines = block.get("lines", [])
+            if not block_lines:
+                continue
+            
+            block_bbox = block["bbox"]  # (x0, y0, x1, y1)
+            block_x0 = block_bbox[0]
+            block_x1 = block_bbox[2]
+            block_center = (block_x0 + block_x1) / 2
+            block_width = block_x1 - block_x0
+            
+            # ---- Markazlashni aniqlash ----
+            # Blok markazdan ± 15% ichida bo'lsa va to'liq kenglikni egallamasa
+            center_tolerance = content_width * 0.15
+            is_centered = (
+                abs(block_center - page_center) < center_tolerance 
+                and block_width < content_width * 0.85
+            )
+            
+            # ---- Chapdan indent (abzats boshi) aniqlash ----
+            indent_threshold = page_left_margin + content_width * 0.05  # >5% indent
+            has_indent = block_x0 > indent_threshold
+            
+            # Har bir satrdagi span larni yig'ib paragraf yaratish
+            for line in block_lines:
+                spans = line.get("spans", [])
+                if not spans:
+                    continue
+                
+                # Satrning to'liq matnini olish
+                full_line_text = ""
+                for span in spans:
+                    full_line_text += span.get("text", "")
+                
+                full_line_text = full_line_text.strip()
+                if not full_line_text:
+                    continue
+                
+                # Tire-ro'yxat elementi bo'lsa
+                is_dash_item = full_line_text.startswith("- ") or full_line_text.startswith("— ") or full_line_text.startswith("– ")
+                
+                # Paragraf yaratish
+                para = word_doc.add_paragraph()
+                
+                # Paragraf formatlash
+                para_format = para.paragraph_format
+                para_format.space_before = Pt(0)
+                para_format.space_after = Pt(2)
+                para_format.line_spacing = 1.15
+                
+                if is_centered:
+                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                elif is_dash_item:
+                    para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    para_format.left_indent = Cm(1.0)
+                    para_format.first_line_indent = Cm(-0.5)
+                elif has_indent:
+                    para_format.first_line_indent = Cm(1.25)
+                
+                # Har bir span uchun Run yaratish (formatlashni saqlash)
+                for span in spans:
+                    text = span.get("text", "")
+                    if not text:
+                        continue
+                    
+                    font_name = span.get("font", "")
+                    font_size = span.get("size", 12)
+                    font_flags = span.get("flags", 0)
+                    # flags: bit 0 = superscript, bit 1 = italic, bit 2 = serif, 
+                    #         bit 3 = monospace, bit 4 = bold
+                    is_bold = bool(font_flags & (1 << 4)) or "Bold" in font_name or "bold" in font_name
+                    is_italic = bool(font_flags & (1 << 1)) or "Italic" in font_name or "italic" in font_name
+                    
+                    # Transliteratsiya
+                    if alphabet == "Lotin":
+                        text = convert_cyrillic_to_latin(text)
+                    elif alphabet == "Kirill":
+                        text = convert_latin_to_cyrillic(text)
+                    
+                    # Run yaratish
+                    run = para.add_run(text)
+                    run.font.size = Pt(max(8, min(28, font_size)))
+                    run.bold = is_bold
+                    run.italic = is_italic
+                    
+                    # Shrift nomi (standart shriftga o'tkazish)
+                    if any(kw in font_name.lower() for kw in ["times", "serif"]):
+                        run.font.name = "Times New Roman"
+                    elif any(kw in font_name.lower() for kw in ["arial", "helvetica", "sans"]):
+                        run.font.name = "Arial"
+                    else:
+                        run.font.name = "Times New Roman"
+        
+        # Sahifalar orasida page break
+        if page_num < len(pdf_doc) - 1:
+            word_doc.add_page_break()
+    
+    # Word faylni saqlash
+    word_doc.save(docx_path)
+    pdf_doc.close()
+    logging.info(f"PDF→Word formatted muvaffaqiyatli: {docx_path}")
+

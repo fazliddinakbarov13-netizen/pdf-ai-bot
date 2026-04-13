@@ -2618,189 +2618,49 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
             
             is_scanned = (text_len < 50)
             
-            # === LibreOffice yordamida PDF → Word konvertatsiya ===
-            # LibreOffice pdf2docx ga qaraganda ancha yaxshi format saqlaydi
+            # === Professional PDF → Word konvertatsiya ===
+            # PyMuPDF + python-docx = format (bold, markazlash, shrift) saqlaydi
             
-            def _find_libreoffice():
-                """VPS dagi LibreOffice ni topish."""
-                paths = [
-                    r"C:\Program Files\LibreOffice\program\soffice.exe",
-                    r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-                    r"C:\tools\LibreOffice\program\soffice.exe",
-                ]
-                # Program Files ichidagi barcha LibreOffice papkalarini tekshirish
-                for pf in [r"C:\Program Files", r"C:\Program Files (x86)"]:
-                    try:
-                        if os.path.exists(pf):
-                            for d in os.listdir(pf):
-                                if "LibreOffice" in d:
-                                    pos = os.path.join(pf, d, "program", "soffice.exe")
-                                    if os.path.exists(pos):
-                                        paths.append(pos)
-                    except Exception:
-                        pass
-                return next((p for p in paths if os.path.exists(p)), None)
-            
-            if selected_alphabet == "Original":
-                # O'zgartirmasdan — LibreOffice bilan formatni saqlab konvertatsiya
+            if is_scanned:
+                # Skanerlangan PDF — Tesseract OCR bilan
                 doc.close()
                 
-                def _convert_pdf_to_word_original(pdf_path, docx_path):
-                    import subprocess, uuid, shutil, tempfile
-                    
-                    soffice = _find_libreoffice()
-                    if soffice:
-                        out_dir = os.path.dirname(docx_path)
-                        safe_name = f"temp_{uuid.uuid4().hex}"
-                        safe_pdf = os.path.join(out_dir, f"{safe_name}.pdf")
-                        safe_docx = os.path.join(out_dir, f"{safe_name}.docx")
-                        
-                        try:
-                            shutil.copy2(pdf_path, safe_pdf)
-                            with tempfile.TemporaryDirectory() as profile_dir:
-                                profile_uri = "file:///" + profile_dir.replace("\\", "/")
-                                cmd = [
-                                    soffice,
-                                    f"-env:UserInstallation={profile_uri}",
-                                    "--headless",
-                                    "--infilter=writer_pdf_import",
-                                    "--convert-to", "docx:MS Word 2007 XML",
-                                    safe_pdf,
-                                    "--outdir", out_dir
-                                ]
-                                process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
-                            
-                            if os.path.exists(safe_docx) and os.path.getsize(safe_docx) > 0:
-                                if os.path.exists(docx_path):
-                                    os.remove(docx_path)
-                                shutil.move(safe_docx, docx_path)
-                                logger.info("LibreOffice PDF→Word muvaffaqiyatli!")
-                            else:
-                                raise Exception(f"LibreOffice DOCX yarata olmadi. stderr: {process.stderr.decode('utf-8', errors='ignore')}")
-                        finally:
-                            for f in [safe_pdf, safe_docx]:
-                                if os.path.exists(f):
-                                    try: os.remove(f)
-                                    except: pass
-                    else:
-                        # Fallback: pdf2docx
-                        logger.warning("LibreOffice topilmadi, pdf2docx ga o'tilmoqda...")
-                        try:
-                            from pdf2docx import Converter
-                            cv = Converter(pdf_path)
-                            cv.convert(docx_path)
-                            cv.close()
-                        except ImportError:
-                            import sys
-                            subprocess.run([sys.executable, "-m", "pip", "install", "pdf2docx"], check=True)
-                            code = f"from pdf2docx import Converter\ncv = Converter(r'{pdf_path}')\ncv.convert(r'{docx_path}')\ncv.close()"
-                            subprocess.run([sys.executable, "-c", code], check=True)
+                def _convert_scanned(pdf_path, docx_path, alphabet):
+                    logging.info("Skanerlangan PDF aniqlandi. Tesseract ishga tushiriladi...")
+                    from utils import extract_text_via_tesseract
+                    extract_text_via_tesseract(pdf_path, docx_path, alphabet)
+                    logging.info("Tesseract muvaffaqiyatli yakunlandi.")
                 
                 try:
                     await status_msg.edit_text(
                         f"{direction_emoji} <b>{direction_label}</b>\n\n"
-                        f"📝 <i>PDF formatini Word ga o'tkazilmoqda (LibreOffice)...</i>\n"
-                        f"▓▓▓▓▓▓░░░░ 60%",
-                        parse_mode="HTML"
-                    )
-                except Exception:
-                    pass
-                
-                await asyncio.to_thread(_convert_pdf_to_word_original, file_path, output_path)
-                
-            else:
-                # Lotin yoki Kirill so'raldi
-                doc.close()
-                
-                def _convert_and_transliterate(pdf_path, docx_path, alphabet, scanned):
-                    import subprocess, uuid, shutil, tempfile
-                    
-                    if scanned:
-                        logging.info("Skanerlangan PDF aniqlandi. Tesseract ishga tushiriladi...")
-                        from utils import extract_text_via_tesseract
-                        extract_text_via_tesseract(pdf_path, docx_path, alphabet)
-                        logging.info("Tesseract muvaffaqiyatli yakunlandi.")
-                    else:
-                        # 1-qadam: LibreOffice bilan Word yaratish (format yaxshi saqlanadi)
-                        soffice = _find_libreoffice()
-                        converted = False
-                        
-                        if soffice:
-                            out_dir = os.path.dirname(docx_path)
-                            safe_name = f"temp_{uuid.uuid4().hex}"
-                            safe_pdf = os.path.join(out_dir, f"{safe_name}.pdf")
-                            safe_docx = os.path.join(out_dir, f"{safe_name}.docx")
-                            
-                            try:
-                                shutil.copy2(pdf_path, safe_pdf)
-                                with tempfile.TemporaryDirectory() as profile_dir:
-                                    profile_uri = "file:///" + profile_dir.replace("\\", "/")
-                                    cmd = [
-                                        soffice,
-                                        f"-env:UserInstallation={profile_uri}",
-                                        "--headless",
-                                        "--infilter=writer_pdf_import",
-                                        "--convert-to", "docx:MS Word 2007 XML",
-                                        safe_pdf,
-                                        "--outdir", out_dir
-                                    ]
-                                    process = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
-                                
-                                if os.path.exists(safe_docx) and os.path.getsize(safe_docx) > 0:
-                                    if os.path.exists(docx_path):
-                                        os.remove(docx_path)
-                                    shutil.move(safe_docx, docx_path)
-                                    converted = True
-                                    logger.info("LibreOffice PDF→Word muvaffaqiyatli!")
-                            except Exception as e:
-                                logger.error(f"LibreOffice PDF→Word xato: {e}")
-                            finally:
-                                for f in [safe_pdf, safe_docx]:
-                                    if os.path.exists(f):
-                                        try: os.remove(f)
-                                        except: pass
-                        
-                        if not converted:
-                            # Fallback: pdf2docx
-                            logger.warning("LibreOffice ishlamadi, pdf2docx ga o'tilmoqda...")
-                            try:
-                                from pdf2docx import Converter
-                                cv = Converter(pdf_path)
-                                cv.convert(docx_path)
-                                cv.close()
-                                logger.info(f"pdf2docx muvaffaqiyatli: {docx_path}")
-                            except Exception as e:
-                                logger.error(f"pdf2docx xato: {e}")
-                                import sys
-                                try:
-                                    code = f"from pdf2docx import Converter\ncv = Converter(r'{pdf_path}')\ncv.convert(r'{docx_path}')\ncv.close()"
-                                    subprocess.run([sys.executable, "-c", code], check=True, timeout=120)
-                                    logger.info("pdf2docx subprocess muvaffaqiyatli")
-                                except Exception as e2:
-                                    logger.error(f"pdf2docx subprocess xato: {e2}")
-                                    raise Exception(f"PDF konvertatsiya xatosi: {e2}")
-                        
-                        # 2-qadam: Alifbo konvertatsiya (DOCX ichidagi barcha matnni o'girish)
-                        try:
-                            from utils import process_docx_alphabet
-                            logger.info(f"process_docx_alphabet boshlandi: {alphabet}")
-                            process_docx_alphabet(docx_path, alphabet)
-                            logger.info("process_docx_alphabet muvaffaqiyatli")
-                        except Exception as e:
-                            logger.error(f"process_docx_alphabet xato: {e}", exc_info=True)
-                
-                try:
-                    await status_msg.edit_text(
-                        f"{direction_emoji} <b>{direction_label}</b>\n\n"
-                        f"📝 <i>PDF dan Word yaratilmoqda (LibreOffice + alifbo o'girish)...</i>\n"
+                        f"🔍 <i>Skanerlangan PDF — OCR bilan o'qilmoqda...</i>\n"
                         f"▓▓▓▓▓░░░░░ 50%",
                         parse_mode="HTML"
                     )
                 except Exception:
                     pass
                 
-                await asyncio.to_thread(_convert_and_transliterate, file_path, output_path, selected_alphabet, is_scanned)
-                logger.info(f"PDF→Word+alifbo muvaffaqiyatli: {output_path}")
+                await asyncio.to_thread(_convert_scanned, file_path, output_path, selected_alphabet)
+            else:
+                # Oddiy matnli PDF — professional konvertor bilan
+                doc.close()
+                
+                def _convert_formatted(pdf_path, docx_path, alphabet):
+                    from utils import convert_pdf_to_word_formatted
+                    convert_pdf_to_word_formatted(pdf_path, docx_path, alphabet)
+                
+                try:
+                    await status_msg.edit_text(
+                        f"{direction_emoji} <b>{direction_label}</b>\n\n"
+                        f"📝 <i>PDF → Word (formatlash saqlanmoqda)...</i>\n"
+                        f"▓▓▓▓▓▓░░░░ 60%",
+                        parse_mode="HTML"
+                    )
+                except Exception:
+                    pass
+                
+                await asyncio.to_thread(_convert_formatted, file_path, output_path, selected_alphabet)
             
             out_filename = os.path.splitext(original_name)[0] + ".docx"
             doc_file = FSInputFile(output_path, filename=out_filename)
