@@ -2633,8 +2633,8 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                     from docx.enum.text import WD_ALIGN_PARAGRAPH
                     from PIL import Image
                     import io as _io
-                    from utils import client
-                    from google.genai import types
+                    from utils import openai_client
+                    import base64
                     
                     pdf = fitz.open(pdf_path)
                     word_doc = DocxDocument()
@@ -2653,9 +2653,7 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                         page = pdf[page_num]
                         pix = page.get_pixmap(dpi=250)
                         img_data = pix.tobytes("png")
-                        pil_img = Image.open(_io.BytesIO(img_data))
-                        if pil_img.mode != 'RGB':
-                            pil_img = pil_img.convert('RGB')
+                        base64_image = base64.b64encode(img_data).decode('utf-8')
                         
                         try:
                             await status_msg.edit_text(
@@ -2668,7 +2666,7 @@ async def convert_alphabet_callback(callback: CallbackQuery, state: FSMContext):
                         except Exception:
                             pass
                         
-                        # Gemini AI bilan OCR
+                        # OpenAI gpt-4o-mini bilan OCR
                         ocr_prompt = f"""You are an expert document OCR system. Extract ALL text from this document image.
 
 OUTPUT FORMAT RULES:
@@ -2687,18 +2685,30 @@ Return ONLY the extracted text with formatting tags."""
                         page_text = ""
                         for attempt in range(3):
                             try:
-                                response = await client.aio.models.generate_content(
-                                    model='gemini-2.5-pro',
-                                    contents=[pil_img, ocr_prompt],
-                                    config=types.GenerateContentConfig(
-                                        temperature=0.1
-                                    )
+                                response = await openai_client.chat.completions.create(
+                                    model="gpt-4o-mini",
+                                    messages=[
+                                        {
+                                            "role": "user",
+                                            "content": [
+                                                {"type": "text", "text": ocr_prompt},
+                                                {
+                                                    "type": "image_url",
+                                                    "image_url": {
+                                                        "url": f"data:image/png;base64,{base64_image}",
+                                                        "detail": "high"
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    temperature=0.1
                                 )
-                                page_text = response.text.strip() if response.text else ""
+                                page_text = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
                                 if page_text:
                                     break  # Muvaffaqiyatli o'qildi
                             except Exception as e:
-                                logger.error(f"Gemini OCR xato (sahifa {page_num}, urinish {attempt+1}): {e}")
+                                logger.error(f"OpenAI OCR xato (sahifa {page_num}, urinish {attempt+1}): {e}")
                                 await asyncio.sleep(2)
                         
                         if not page_text:

@@ -6,9 +6,14 @@ from google import genai
 from google.genai import types
 from PIL import Image, ImageEnhance
 from dotenv import load_dotenv
+from openai import AsyncOpenAI
 
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
+openai_api_key = os.getenv("OPENAI_API_KEY")
+
+# OpenAI Client (Asosiy tezkor)
+openai_client = AsyncOpenAI(api_key=openai_api_key)
 
 # GEMINI_BASE_URL faqat .env da bo'lsagina ishlatiladi.
 base_url = os.getenv("GEMINI_BASE_URL")
